@@ -364,6 +364,7 @@ function nextColor(c: ColorId): ColorId {
 // -------------------- React component --------------------
 
 const Blokus: React.FC = () => {
+  const [gameStarted, setGameStarted] = useState(false);
   const [state, setState] = useState<GameState>(makeInitialState);
   const [selectedPieceId, setSelectedPieceId] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<Shape | null>(null);
@@ -514,6 +515,7 @@ const Blokus: React.FC = () => {
     setOrientation(null);
     setHover(null);
     setMessage("");
+    setGameStarted(false);
   }
 
   const preview = useMemo(() => {
@@ -556,14 +558,18 @@ const Blokus: React.FC = () => {
     else winnerText = `Tie! Both teams scored ${teamA}.`;
   }
 
+  if (!gameStarted) {
+    return <LobbyPage onStart={() => setGameStarted(true)} />;
+  }
+
   return (
     <div
       style={{
         fontFamily:
           "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
-        padding: 16,
-        color: "#0f172a",
-        background: "#f8fafc",
+        padding: 24,
+        color: "#f8fafc",
+        background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
         minHeight: "100vh",
       }}
     >
@@ -583,7 +589,8 @@ const Blokus: React.FC = () => {
               display: "inline-block",
               padding: 4,
               background: "#0f172a",
-              borderRadius: 6,
+              borderRadius: 8,
+              boxShadow: "0 0 40px rgba(99, 102, 241, 0.3), 0 8px 32px rgba(0,0,0,0.6)",
             }}
           >
             <div
@@ -707,13 +714,15 @@ const Blokus: React.FC = () => {
                 padding: 12,
                 border: `2px solid ${COLOR_HEX[currentColor]}`,
                 borderRadius: 6,
-                background: "#fff",
+                background: "rgba(255,255,255,0.06)",
+                backdropFilter: "blur(8px)",
+                boxShadow: `0 0 20px ${COLOR_HEX[currentColor]}33`,
               }}
             >
               <div style={{ fontWeight: 600, marginBottom: 4 }}>
                 {PLAYER_NAME[currentPlayer]}
               </div>
-              <div style={{ marginBottom: 6, color: "#475569", fontSize: 14 }}>
+              <div style={{ marginBottom: 6, color: "#94a3b8", fontSize: 14 }}>
                 Now playing:{" "}
                 <span
                   style={{
@@ -728,13 +737,13 @@ const Blokus: React.FC = () => {
                 </span>
               </div>
               {isFirstMoveFor[currentColor] ? (
-                <div style={{ fontSize: 13, color: "#475569" }}>
+                <div style={{ fontSize: 13, color: "#94a3b8" }}>
                   First {COLOR_NAME[currentColor]} move: piece must cover corner (
                   {START_SQUARES[currentColor][0] + 1},{" "}
                   {START_SQUARES[currentColor][1] + 1}).
                 </div>
               ) : (
-                <div style={{ fontSize: 13, color: "#475569" }}>
+                <div style={{ fontSize: 13, color: "#94a3b8" }}>
                   Must touch a diagonal corner of an existing{" "}
                   {COLOR_NAME[currentColor]} piece, with no shared edges.
                 </div>
@@ -764,7 +773,7 @@ const Blokus: React.FC = () => {
 
               {orientation && (
                 <div style={{ marginTop: 10 }}>
-                  <div style={{ fontSize: 12, color: "#475569", marginBottom: 4 }}>
+                  <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 4 }}>
                     Click a board cell to place — that cell becomes the piece's
                     top-left corner:
                   </div>
@@ -808,7 +817,7 @@ const ScorePanel: React.FC<{
         alignItems: "center",
         justifyContent: "space-between",
         padding: "4px 8px",
-        background: state.current === c ? COLOR_LIGHT[c] : "#fff",
+        background: state.current === c ? COLOR_LIGHT[c] : "rgba(255,255,255,0.08)",
         border: `1px solid ${COLOR_HEX[c]}`,
         borderRadius: 4,
         marginBottom: 4,
@@ -827,13 +836,13 @@ const ScorePanel: React.FC<{
         />
         <strong>{COLOR_NAME[c]}</strong>
         {state.passed[c] && (
-          <span style={{ fontSize: 11, color: "#64748b" }}>(out)</span>
+          <span style={{ fontSize: 11, color: "#94a3b8" }}>(out)</span>
         )}
         {state.finished[c] && (
           <span style={{ fontSize: 11, color: "#16a34a" }}>(done!)</span>
         )}
       </div>
-      <div style={{ fontSize: 12, color: "#334155" }}>
+      <div style={{ fontSize: 12, color: "#cbd5e1" }}>
         Left: {state.remaining[c].size} • Score: {colorScore(state, c)}
       </div>
     </div>
@@ -843,9 +852,10 @@ const ScorePanel: React.FC<{
     <div
       style={{
         padding: 8,
-        border: "1px solid #cbd5e1",
+        border: "1px solid rgba(255,255,255,0.12)",
         borderRadius: 6,
-        background: "#fff",
+        background: "rgba(255,255,255,0.06)",
+        backdropFilter: "blur(8px)",
       }}
     >
       <div
@@ -901,8 +911,8 @@ const PieceTray: React.FC<{
                 padding: 4,
                 border: selected
                   ? `2px solid ${COLOR_HEX[color]}`
-                  : "1px solid #cbd5e1",
-                background: available ? "#fff" : "#f1f5f9",
+                  : "1px solid rgba(255,255,255,0.12)",
+                background: available ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)",
                 opacity: available ? 1 : 0.4,
                 borderRadius: 4,
                 cursor: available && !disabled ? "pointer" : "not-allowed",
@@ -919,7 +929,7 @@ const PieceTray: React.FC<{
                 cellPx={9}
                 muted={!available}
               />
-              <span style={{ fontSize: 10, color: "#475569" }}>{p.id}</span>
+              <span style={{ fontSize: 10, color: "#94a3b8" }}>{p.id}</span>
             </button>
           );
         })}
@@ -997,19 +1007,194 @@ function btn(variant: "primary" | "warn" | "ghost" = "primary"): React.CSSProper
   const base: React.CSSProperties = {
     padding: "6px 12px",
     borderRadius: 4,
-    border: "1px solid #cbd5e1",
-    background: "#fff",
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(255,255,255,0.1)",
+    color: "#f8fafc",
     cursor: "pointer",
     fontSize: 13,
   };
   if (variant === "warn") {
-    base.background = "#fef3c7";
+    base.background = "rgba(245,158,11,0.2)";
     base.borderColor = "#f59e0b";
+    base.color = "#fde68a";
   } else if (variant === "ghost") {
     base.background = "transparent";
-    base.color = "#475569";
+    base.color = "#94a3b8";
+    base.border = "1px solid transparent";
   }
   return base;
 }
+
+// -------------------- Lobby --------------------
+
+const LobbyPage: React.FC<{ onStart: () => void }> = ({ onStart }) => {
+  // "A" = Blue+Red (left), "B" = Yellow+Green (right). Players start on opposite sides.
+  const [p1Side, setP1Side] = useState<"A" | "B">("A");
+  const [p2Side, setP2Side] = useState<"A" | "B">("B");
+  const canStart = p1Side !== p2Side;
+
+  const chip = (label: string, side: "A" | "B") => (
+    <div
+      style={{
+        padding: "10px 20px",
+        borderRadius: 8,
+        background:
+          side === "A"
+            ? `linear-gradient(135deg, ${COLOR_HEX[1]}, ${COLOR_HEX[3]})`
+            : `linear-gradient(135deg, ${COLOR_HEX[2]}, ${COLOR_HEX[4]})`,
+        color: "#fff",
+        fontWeight: 700,
+        fontSize: 15,
+        whiteSpace: "nowrap" as const,
+        boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
+      }}
+    >
+      {label}
+    </div>
+  );
+
+  const arrowBtn = (onClick: () => void, label: string) => (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "8px 14px",
+        borderRadius: 6,
+        border: "1px solid rgba(255,255,255,0.2)",
+        background: "rgba(255,255,255,0.08)",
+        color: "#f8fafc",
+        cursor: "pointer",
+        fontSize: 18,
+        lineHeight: 1,
+      }}
+      title={label}
+    >
+      {label === "right" ? "›" : "‹"}
+    </button>
+  );
+
+  // Each row: left zone | center arrows | right zone
+  const playerRow = (
+    playerLabel: string,
+    side: "A" | "B",
+    toggle: () => void
+  ) => (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 80px 1fr",
+        alignItems: "center",
+        gap: 0,
+        width: "100%",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "flex-end", paddingRight: 16 }}>
+        {side === "A" && chip(playerLabel, "A")}
+      </div>
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        {arrowBtn(toggle, side === "A" ? "right" : "left")}
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-start", paddingLeft: 16 }}>
+        {side === "B" && chip(playerLabel, "B")}
+      </div>
+    </div>
+  );
+
+  const teamHeader = (colors: ColorId[], name: string) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      {colors.map((c) => (
+        <div
+          key={c}
+          style={{ width: 14, height: 14, borderRadius: 3, background: COLOR_HEX[c] }}
+        />
+      ))}
+      <span style={{ fontWeight: 700, fontSize: 15 }}>{name}</span>
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
+        background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "#f8fafc",
+        gap: 40,
+        padding: 24,
+        boxSizing: "border-box",
+      }}
+    >
+      <div style={{ textAlign: "center" }}>
+        <h1 style={{ margin: 0, fontSize: 48, letterSpacing: 4, fontWeight: 800 }}>BLOKUS</h1>
+        <p style={{ margin: "8px 0 0", color: "#94a3b8", fontSize: 15 }}>
+          Arrow over to claim your team, then start.
+        </p>
+      </div>
+
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 560,
+          padding: "28px 24px",
+          border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: 16,
+          background: "rgba(255,255,255,0.05)",
+          backdropFilter: "blur(8px)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 24,
+        }}
+      >
+        {/* Column headers */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 1fr" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", paddingRight: 16 }}>
+            {teamHeader([1, 3], "Blue & Red")}
+          </div>
+          <div />
+          <div style={{ paddingLeft: 16 }}>
+            {teamHeader([2, 4], "Yellow & Green")}
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }} />
+
+        {/* Player rows */}
+        {playerRow("Player 1", p1Side, () => setP1Side(p1Side === "A" ? "B" : "A"))}
+        {playerRow("Player 2", p2Side, () => setP2Side(p2Side === "A" ? "B" : "A"))}
+
+        {!canStart && (
+          <div style={{ textAlign: "center", fontSize: 13, color: "#f59e0b" }}>
+            Both players are on the same team — one must switch.
+          </div>
+        )}
+      </div>
+
+      <button
+        disabled={!canStart}
+        onClick={onStart}
+        style={{
+          padding: "14px 56px",
+          fontSize: 18,
+          fontWeight: 700,
+          borderRadius: 10,
+          border: "none",
+          background: canStart
+            ? "linear-gradient(135deg, #6366f1, #8b5cf6)"
+            : "rgba(255,255,255,0.08)",
+          color: canStart ? "#fff" : "#475569",
+          cursor: canStart ? "pointer" : "not-allowed",
+          boxShadow: canStart ? "0 0 32px rgba(99,102,241,0.5)" : "none",
+          letterSpacing: 1,
+        }}
+      >
+        Start Game
+      </button>
+    </div>
+  );
+};
 
 export default Blokus;
