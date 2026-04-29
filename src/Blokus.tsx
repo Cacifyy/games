@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { BlokusSocket, SerializedState, ServerEvent } from "./socket";
 
 /**
  * Classic 4-color Blokus — single-file React + TypeScript implementation.
@@ -45,25 +46,23 @@ interface PlacedPiece {
   cells: [number, number][];
 }
 
-interface GameState {
+export interface GameState {
   board: Board;
   current: ColorId;
   remaining: Record<ColorId, Set<string>>;
   history: PlacedPiece[];
-  consecutivePasses: number; // resets on any successful placement
+  consecutivePasses: number;
   lastPlacedWasMonomino: Record<ColorId, boolean>;
   finished: Record<ColorId, boolean>;
-  passed: Record<ColorId, boolean>; // permanent: this color has no moves left ever
+  passed: Record<ColorId, boolean>;
 }
 
 // -------------------- Constants --------------------
 
 const BOARD_SIZE = 20;
 
-// Classic Blokus turn order is clockwise from top-left.
 const COLOR_ORDER: ColorId[] = [1, 2, 3, 4];
 
-// Starting corners for each color.
 const START_SQUARES: Record<ColorId, [number, number]> = {
   1: [0, 0],
   2: [0, BOARD_SIZE - 1],
@@ -92,7 +91,6 @@ const COLOR_LIGHT: Record<ColorId, string> = {
   4: "#bbf7d0",
 };
 
-// Player <-> colors mapping: A controls 1 & 3 (diagonal), B controls 2 & 4.
 const COLORS_FOR: Record<PlayerId, ColorId[]> = {
   A: [1, 3],
   B: [2, 4],
@@ -103,11 +101,6 @@ const PLAYER_FOR_COLOR: Record<ColorId, PlayerId> = {
   3: "A",
   2: "B",
   4: "B",
-};
-
-const PLAYER_NAME: Record<PlayerId, string> = {
-  A: "Player A (Blue + Red)",
-  B: "Player B (Yellow + Green)",
 };
 
 // -------------------- Piece definitions (21 standard) --------------------
@@ -219,13 +212,7 @@ function validatePlacement(
     cells.push([r, c]);
   }
 
-  // No edge-adjacent same-color cells.
-  const EDGE = [
-    [-1, 0],
-    [1, 0],
-    [0, -1],
-    [0, 1],
-  ];
+  const EDGE = [[-1, 0], [1, 0], [0, -1], [0, 1]];
   for (const [r, c] of cells) {
     for (const [dr, dc] of EDGE) {
       const nr = r + dr;
@@ -247,12 +234,7 @@ function validatePlacement(
     return { ok: true };
   }
 
-  const DIAG = [
-    [-1, -1],
-    [-1, 1],
-    [1, -1],
-    [1, 1],
-  ];
+  const DIAG = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
   for (const [r, c] of cells) {
     for (const [dr, dc] of DIAG) {
       const nr = r + dr;
@@ -280,12 +262,7 @@ function hasAnyLegalMove(
   if (isFirstMove) {
     anchors.push(START_SQUARES[color]);
   } else {
-    const DIAG = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
-    ];
+    const DIAG = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
         if (board[r][c] !== 0) continue;
@@ -361,6 +338,44 @@ function nextColor(c: ColorId): ColorId {
   return COLOR_ORDER[(idx + 1) % COLOR_ORDER.length];
 }
 
+// -------------------- GameState serialization (for WebSocket) --------------------
+
+function serializeState(gs: GameState): SerializedState {
+  return {
+    board: gs.board,
+    current: gs.current,
+    remaining: {
+      "1": [...gs.remaining[1]],
+      "2": [...gs.remaining[2]],
+      "3": [...gs.remaining[3]],
+      "4": [...gs.remaining[4]],
+    },
+    history: gs.history,
+    consecutivePasses: gs.consecutivePasses,
+    lastPlacedWasMonomino: gs.lastPlacedWasMonomino as Record<string, boolean>,
+    finished: gs.finished as Record<string, boolean>,
+    passed: gs.passed as Record<string, boolean>,
+  };
+}
+
+function deserializeState(s: SerializedState): GameState {
+  return {
+    board: s.board as Board,
+    current: s.current,
+    remaining: {
+      1: new Set(s.remaining["1"] ?? []),
+      2: new Set(s.remaining["2"] ?? []),
+      3: new Set(s.remaining["3"] ?? []),
+      4: new Set(s.remaining["4"] ?? []),
+    },
+    history: s.history.map((h) => ({ ...h, color: h.color as ColorId })),
+    consecutivePasses: s.consecutivePasses,
+    lastPlacedWasMonomino: s.lastPlacedWasMonomino as Record<ColorId, boolean>,
+    finished: s.finished as Record<ColorId, boolean>,
+    passed: s.passed as Record<ColorId, boolean>,
+  };
+}
+
 // -------------------- React component --------------------
 
 const Blokus: React.FC = () => {
@@ -370,6 +385,18 @@ const Blokus: React.FC = () => {
   const [orientation, setOrientation] = useState<Shape | null>(null);
   const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
   const [message, setMessage] = useState<string>("");
+
+  // Multiplayer state
+  const socketRef = useRef<BlokusSocket | null>(null);
+  const [myPlayerId, setMyPlayerId] = useState<PlayerId | null>(null);
+  const [myName, setMyName] = useState("");
+  const [opponentName, setOpponentName] = useState("");
+  const [lobbyStatus, setLobbyStatus] = useState<"idle" | "waiting">("idle");
+
+  // Cleanup socket on unmount.
+  useEffect(() => {
+    return () => { socketRef.current?.close(); };
+  }, []);
 
   const isFirstMoveFor: Record<ColorId, boolean> = {
     1: !state.history.some((h) => h.color === 1),
@@ -381,8 +408,11 @@ const Blokus: React.FC = () => {
   const allDone =
     COLOR_ORDER.every((c) => state.passed[c] || state.finished[c]) ||
     state.consecutivePasses >= 4;
-
   const gameOver = allDone;
+
+  // True when it's this browser's turn to act (or if playing locally with no id assigned).
+  const currentPlayer = PLAYER_FOR_COLOR[state.current];
+  const isMyTurn = myPlayerId === null || currentPlayer === myPlayerId;
 
   useEffect(() => {
     if (selectedPieceId) {
@@ -392,13 +422,12 @@ const Blokus: React.FC = () => {
     }
   }, [selectedPieceId]);
 
-  // Auto-pass any color that has no legal moves at all (and never gets a turn
-  // back). We re-evaluate at the start of each turn.
+  // Auto-pass any color that has no legal moves. Runs independently on both
+  // clients since it's deterministic — only human moves are broadcast.
   useEffect(() => {
     if (gameOver) return;
     const c = state.current;
 
-    // If this color has finished placing all pieces, just skip past it.
     if (state.remaining[c].size === 0 || state.passed[c]) {
       const t = setTimeout(() => {
         setState((s) => ({ ...s, current: nextColor(s.current) }));
@@ -429,6 +458,34 @@ const Blokus: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.current, state.board, gameOver]);
 
+  function handleFindGame(name: string, preferredSide: "A" | "B") {
+    setMyName(name);
+    setLobbyStatus("waiting");
+
+    const socket = new BlokusSocket();
+    socketRef.current = socket;
+
+    socket.onEvent = (event: ServerEvent) => {
+      if (event.type === "start") {
+        setMyPlayerId(event.playerId as PlayerId);
+        setOpponentName(event.opponentName);
+        setGameStarted(true);
+        setLobbyStatus("idle");
+      } else if (event.type === "state") {
+        setState(deserializeState(event.state));
+      } else if (event.type === "opponent_disconnected") {
+        setMessage("Opponent disconnected.");
+      }
+    };
+
+    // Dev: Vite proxies /ws → ws://localhost:3001.
+    // Prod: VITE_WS_URL is set in Vercel env vars pointing at the Railway server.
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl =
+      import.meta.env.VITE_WS_URL ?? `${proto}://${window.location.host}/ws`;
+    socket.connect(wsUrl, name, preferredSide);
+  }
+
   function rotateSelected() {
     if (!orientation) return;
     setOrientation(rotateCW(orientation));
@@ -439,7 +496,7 @@ const Blokus: React.FC = () => {
   }
 
   function tryPlaceAt(r: number, c: number) {
-    if (gameOver || !selectedPieceId || !orientation) return;
+    if (gameOver || !isMyTurn || !selectedPieceId || !orientation) return;
     const color = state.current;
     if (!state.remaining[color].has(selectedPieceId)) return;
 
@@ -473,7 +530,7 @@ const Blokus: React.FC = () => {
     const finished = { ...state.finished };
     if (newRemaining[color].size === 0) finished[color] = true;
 
-    setState({
+    const newState: GameState = {
       ...state,
       board: newBoard,
       remaining: newRemaining,
@@ -488,7 +545,10 @@ const Blokus: React.FC = () => {
         ...state.lastPlacedWasMonomino,
         [color]: wasMonomino,
       },
-    });
+    };
+
+    setState(newState);
+    socketRef.current?.sendMove(serializeState(newState));
     setSelectedPieceId(null);
     setOrientation(null);
     setHover(null);
@@ -496,30 +556,38 @@ const Blokus: React.FC = () => {
   }
 
   function manualPass() {
-    if (gameOver) return;
+    if (gameOver || !isMyTurn) return;
     const c = state.current;
-    setState((s) => ({
-      ...s,
-      passed: { ...s.passed, [c]: true },
-      current: nextColor(s.current),
-      consecutivePasses: s.consecutivePasses + 1,
-    }));
+    const newState: GameState = {
+      ...state,
+      passed: { ...state.passed, [c]: true },
+      current: nextColor(state.current),
+      consecutivePasses: state.consecutivePasses + 1,
+    };
+    setState(newState);
+    socketRef.current?.sendMove(serializeState(newState));
     setSelectedPieceId(null);
     setOrientation(null);
     setMessage(`${COLOR_NAME[c]} resigned (no more moves this game).`);
   }
 
   function resetGame() {
+    socketRef.current?.close();
+    socketRef.current = null;
     setState(makeInitialState());
     setSelectedPieceId(null);
     setOrientation(null);
     setHover(null);
     setMessage("");
+    setMyPlayerId(null);
+    setMyName("");
+    setOpponentName("");
+    setLobbyStatus("idle");
     setGameStarted(false);
   }
 
   const preview = useMemo(() => {
-    if (!hover || !orientation || !selectedPieceId || gameOver) return null;
+    if (!hover || !orientation || !selectedPieceId || gameOver || !isMyTurn) return null;
     const color = state.current;
     const cells: [number, number][] = [];
     let allInBounds = true;
@@ -540,26 +608,36 @@ const Blokus: React.FC = () => {
       isFirstMoveFor[color]
     );
     return { cells, ok: v.ok && allInBounds, color };
-  }, [hover, orientation, selectedPieceId, state, gameOver, isFirstMoveFor]);
+  }, [hover, orientation, selectedPieceId, state, gameOver, isMyTurn, isFirstMoveFor]);
 
   // -------------------- Rendering --------------------
 
   const cellSize = 26;
-  const currentColor = state.current;
-  const currentPlayer = PLAYER_FOR_COLOR[currentColor];
 
   const teamA = teamScore(state, "A");
   const teamB = teamScore(state, "B");
 
+  // Resolve display names: if networked, show actual names; otherwise generic labels.
+  const nameFor = (player: PlayerId): string => {
+    if (!myPlayerId) return player === "A" ? "Player A (Blue + Red)" : "Player B (Yellow + Green)";
+    if (player === myPlayerId) return `${myName} (${player === "A" ? "Blue + Red" : "Yellow + Green"})`;
+    return `${opponentName} (${player === "A" ? "Blue + Red" : "Yellow + Green"})`;
+  };
+
   let winnerText: string | null = null;
   if (gameOver) {
-    if (teamA > teamB) winnerText = `Player A wins! ${teamA} to ${teamB}.`;
-    else if (teamB > teamA) winnerText = `Player B wins! ${teamB} to ${teamA}.`;
+    if (teamA > teamB) winnerText = `${nameFor("A")} wins! ${teamA} to ${teamB}.`;
+    else if (teamB > teamA) winnerText = `${nameFor("B")} wins! ${teamB} to ${teamA}.`;
     else winnerText = `Tie! Both teams scored ${teamA}.`;
   }
 
   if (!gameStarted) {
-    return <LobbyPage onStart={() => setGameStarted(true)} />;
+    return (
+      <LobbyPage
+        status={lobbyStatus}
+        onFindGame={handleFindGame}
+      />
+    );
   }
 
   return (
@@ -640,7 +718,7 @@ const Blokus: React.FC = () => {
                         background: bg,
                         outline,
                         outlineOffset: -2,
-                        cursor: selectedPieceId ? "pointer" : "default",
+                        cursor: selectedPieceId && isMyTurn ? "pointer" : "default",
                         position: "relative",
                       }}
                     >
@@ -677,6 +755,7 @@ const Blokus: React.FC = () => {
                 border: "1px solid #fde68a",
                 borderRadius: 4,
                 display: "inline-block",
+                color: "#78350f",
               }}
             >
               {message}
@@ -691,6 +770,7 @@ const Blokus: React.FC = () => {
                 background: "#dcfce7",
                 border: "1px solid #86efac",
                 borderRadius: 6,
+                color: "#14532d",
               }}
             >
               <strong>Game over.</strong> {winnerText}
@@ -705,73 +785,83 @@ const Blokus: React.FC = () => {
 
         {/* Side panel */}
         <div style={{ minWidth: 360, maxWidth: 520 }}>
-          <ScorePanel state={state} teamA={teamA} teamB={teamB} />
+          <ScorePanel state={state} teamA={teamA} teamB={teamB} nameFor={nameFor} />
 
           {!gameOver && (
             <div
               style={{
                 marginTop: 12,
                 padding: 12,
-                border: `2px solid ${COLOR_HEX[currentColor]}`,
+                border: `2px solid ${COLOR_HEX[state.current]}`,
                 borderRadius: 6,
                 background: "rgba(255,255,255,0.06)",
                 backdropFilter: "blur(8px)",
-                boxShadow: `0 0 20px ${COLOR_HEX[currentColor]}33`,
+                boxShadow: `0 0 20px ${COLOR_HEX[state.current]}33`,
               }}
             >
               <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                {PLAYER_NAME[currentPlayer]}
+                {isMyTurn
+                  ? `Your turn — ${nameFor(currentPlayer)}`
+                  : `Waiting for ${nameFor(currentPlayer)}…`}
               </div>
               <div style={{ marginBottom: 6, color: "#94a3b8", fontSize: 14 }}>
                 Now playing:{" "}
                 <span
                   style={{
-                    background: COLOR_HEX[currentColor],
+                    background: COLOR_HEX[state.current],
                     color: "#fff",
                     padding: "2px 8px",
                     borderRadius: 3,
                     fontWeight: 600,
                   }}
                 >
-                  {COLOR_NAME[currentColor]}
+                  {COLOR_NAME[state.current]}
                 </span>
               </div>
-              {isFirstMoveFor[currentColor] ? (
+              {isFirstMoveFor[state.current] ? (
                 <div style={{ fontSize: 13, color: "#94a3b8" }}>
-                  First {COLOR_NAME[currentColor]} move: piece must cover corner (
-                  {START_SQUARES[currentColor][0] + 1},{" "}
-                  {START_SQUARES[currentColor][1] + 1}).
+                  First {COLOR_NAME[state.current]} move: piece must cover corner (
+                  {START_SQUARES[state.current][0] + 1},{" "}
+                  {START_SQUARES[state.current][1] + 1}).
                 </div>
               ) : (
                 <div style={{ fontSize: 13, color: "#94a3b8" }}>
                   Must touch a diagonal corner of an existing{" "}
-                  {COLOR_NAME[currentColor]} piece, with no shared edges.
+                  {COLOR_NAME[state.current]} piece, with no shared edges.
                 </div>
               )}
 
-              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button onClick={rotateSelected} disabled={!orientation} style={btn()}>
-                  Rotate ⟳
-                </button>
-                <button onClick={flipSelected} disabled={!orientation} style={btn()}>
-                  Flip ⇋
-                </button>
-                <button
-                  onClick={() => setSelectedPieceId(null)}
-                  disabled={!selectedPieceId}
-                  style={btn()}
-                >
-                  Deselect
-                </button>
-                <button onClick={manualPass} style={btn("warn")}>
-                  Resign {COLOR_NAME[currentColor]}
-                </button>
-                <button onClick={resetGame} style={btn("ghost")}>
-                  Reset
-                </button>
-              </div>
+              {isMyTurn && (
+                <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={rotateSelected} disabled={!orientation} style={btn()}>
+                    Rotate ⟳
+                  </button>
+                  <button onClick={flipSelected} disabled={!orientation} style={btn()}>
+                    Flip ⇋
+                  </button>
+                  <button
+                    onClick={() => setSelectedPieceId(null)}
+                    disabled={!selectedPieceId}
+                    style={btn()}
+                  >
+                    Deselect
+                  </button>
+                  <button onClick={manualPass} style={btn("warn")}>
+                    Resign {COLOR_NAME[state.current]}
+                  </button>
+                  <button onClick={resetGame} style={btn("ghost")}>
+                    Quit
+                  </button>
+                </div>
+              )}
 
-              {orientation && (
+              {!isMyTurn && (
+                <button onClick={resetGame} style={{ ...btn("ghost"), marginTop: 10 }}>
+                  Quit
+                </button>
+              )}
+
+              {orientation && isMyTurn && (
                 <div style={{ marginTop: 10 }}>
                   <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 4 }}>
                     Click a board cell to place — that cell becomes the piece's
@@ -779,7 +869,7 @@ const Blokus: React.FC = () => {
                   </div>
                   <ShapePreview
                     shape={orientation}
-                    color={COLOR_HEX[currentColor]}
+                    color={COLOR_HEX[state.current]}
                     cellPx={20}
                   />
                 </div>
@@ -788,11 +878,11 @@ const Blokus: React.FC = () => {
           )}
 
           <PieceTray
-            color={currentColor}
+            color={state.current}
             remaining={state.remaining}
             selectedPieceId={selectedPieceId}
             onPick={(id) => setSelectedPieceId(id)}
-            disabled={gameOver}
+            disabled={gameOver || !isMyTurn}
           />
         </div>
       </div>
@@ -808,7 +898,8 @@ const ScorePanel: React.FC<{
   state: GameState;
   teamA: number;
   teamB: number;
-}> = ({ state, teamA, teamB }) => {
+  nameFor: (p: PlayerId) => string;
+}> = ({ state, teamA, teamB, nameFor }) => {
   const colorRow = (c: ColorId) => (
     <div
       key={c}
@@ -822,6 +913,7 @@ const ScorePanel: React.FC<{
         borderRadius: 4,
         marginBottom: 4,
         opacity: state.passed[c] ? 0.6 : 1,
+        color: state.current === c ? "#0f172a" : "#f8fafc",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -842,7 +934,7 @@ const ScorePanel: React.FC<{
           <span style={{ fontSize: 11, color: "#16a34a" }}>(done!)</span>
         )}
       </div>
-      <div style={{ fontSize: 12, color: "#cbd5e1" }}>
+      <div style={{ fontSize: 12 }}>
         Left: {state.remaining[c].size} • Score: {colorScore(state, c)}
       </div>
     </div>
@@ -865,7 +957,7 @@ const ScorePanel: React.FC<{
           marginBottom: 6,
         }}
       >
-        <strong>{PLAYER_NAME[player]}</strong>
+        <strong style={{ fontSize: 13 }}>{nameFor(player)}</strong>
         <span>Total: {total}</span>
       </div>
       {COLORS_FOR[player].map(colorRow)}
@@ -1027,174 +1119,263 @@ function btn(variant: "primary" | "warn" | "ghost" = "primary"): React.CSSProper
 
 // -------------------- Lobby --------------------
 
-const LobbyPage: React.FC<{ onStart: () => void }> = ({ onStart }) => {
-  // "A" = Blue+Red (left), "B" = Yellow+Green (right). Players start on opposite sides.
-  const [p1Side, setP1Side] = useState<"A" | "B">("A");
-  const [p2Side, setP2Side] = useState<"A" | "B">("B");
-  const canStart = p1Side !== p2Side;
+const LOBBY_BG: React.CSSProperties = {
+  fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
+  background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
+  minHeight: "100vh",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  color: "#f8fafc",
+  gap: 40,
+  padding: 24,
+  boxSizing: "border-box",
+};
 
-  const chip = (label: string, side: "A" | "B") => (
-    <div
-      style={{
-        padding: "10px 20px",
-        borderRadius: 8,
-        background:
-          side === "A"
-            ? `linear-gradient(135deg, ${COLOR_HEX[1]}, ${COLOR_HEX[3]})`
-            : `linear-gradient(135deg, ${COLOR_HEX[2]}, ${COLOR_HEX[4]})`,
-        color: "#fff",
-        fontWeight: 700,
-        fontSize: 15,
-        whiteSpace: "nowrap" as const,
-        boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
-      }}
-    >
-      {label}
-    </div>
-  );
+const CARD_STYLE: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 480,
+  padding: "32px 28px",
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: 16,
+  background: "rgba(255,255,255,0.05)",
+  backdropFilter: "blur(8px)",
+  display: "flex",
+  flexDirection: "column",
+  gap: 24,
+};
 
-  const arrowBtn = (onClick: () => void, label: string) => (
-    <button
-      onClick={onClick}
-      style={{
-        padding: "8px 14px",
-        borderRadius: 6,
-        border: "1px solid rgba(255,255,255,0.2)",
-        background: "rgba(255,255,255,0.08)",
-        color: "#f8fafc",
-        cursor: "pointer",
-        fontSize: 18,
-        lineHeight: 1,
-      }}
-      title={label}
-    >
-      {label === "right" ? "›" : "‹"}
-    </button>
-  );
+const LobbyPage: React.FC<{
+  status: "idle" | "waiting";
+  onFindGame: (name: string, preferredSide: "A" | "B") => void;
+}> = ({ status, onFindGame }) => {
+  const [step, setStep] = useState<"name" | "team">("name");
+  const [name, setName] = useState("");
+  const [side, setSide] = useState<"A" | "B" | null>(null);
 
-  // Each row: left zone | center arrows | right zone
-  const playerRow = (
-    playerLabel: string,
-    side: "A" | "B",
-    toggle: () => void
-  ) => (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 80px 1fr",
-        alignItems: "center",
-        gap: 0,
-        width: "100%",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "flex-end", paddingRight: 16 }}>
-        {side === "A" && chip(playerLabel, "A")}
+  const advanceToTeam = () => {
+    if (name.trim().length > 0) setStep("team");
+  };
+
+  const canFind = side !== null && status === "idle";
+
+  // ---------- Step 1: name ----------
+  if (step === "name") {
+    return (
+      <div style={LOBBY_BG}>
+        <div style={{ textAlign: "center" }}>
+          <h1 style={{ margin: 0, fontSize: 48, letterSpacing: 4, fontWeight: 800 }}>
+            BLOKUS
+          </h1>
+          <p style={{ margin: "8px 0 0", color: "#94a3b8", fontSize: 15 }}>
+            4 colors · classic rules
+          </p>
+        </div>
+
+        <div style={CARD_STYLE}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <label style={{ fontSize: 13, color: "#94a3b8" }}>Your name</label>
+            <input
+              autoFocus
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && name.trim().length > 0 && advanceToTeam()}
+              placeholder="Enter your name…"
+              maxLength={24}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 8,
+                border: "1px solid rgba(255,255,255,0.2)",
+                background: "rgba(255,255,255,0.08)",
+                color: "#f8fafc",
+                fontSize: 16,
+                outline: "none",
+              }}
+            />
+          </div>
+
+          <button
+            disabled={name.trim().length === 0}
+            onClick={advanceToTeam}
+            style={{
+              padding: "14px 0",
+              fontSize: 16,
+              fontWeight: 700,
+              borderRadius: 10,
+              border: "none",
+              background:
+                name.trim().length > 0
+                  ? "linear-gradient(135deg, #6366f1, #8b5cf6)"
+                  : "rgba(255,255,255,0.08)",
+              color: name.trim().length > 0 ? "#fff" : "#475569",
+              cursor: name.trim().length > 0 ? "pointer" : "not-allowed",
+              boxShadow:
+                name.trim().length > 0 ? "0 0 32px rgba(99,102,241,0.5)" : "none",
+              letterSpacing: 1,
+            }}
+          >
+            Continue →
+          </button>
+        </div>
       </div>
-      <div style={{ display: "flex", justifyContent: "center" }}>
-        {arrowBtn(toggle, side === "A" ? "right" : "left")}
-      </div>
-      <div style={{ display: "flex", justifyContent: "flex-start", paddingLeft: 16 }}>
-        {side === "B" && chip(playerLabel, "B")}
-      </div>
-    </div>
-  );
+    );
+  }
 
-  const teamHeader = (colors: ColorId[], name: string) => (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      {colors.map((c) => (
-        <div
-          key={c}
-          style={{ width: 14, height: 14, borderRadius: 3, background: COLOR_HEX[c] }}
-        />
-      ))}
-      <span style={{ fontWeight: 700, fontSize: 15 }}>{name}</span>
-    </div>
-  );
+  // ---------- Step 2: team select ----------
+  const teamCard = (
+    player: "A" | "B",
+    colors: ColorId[],
+    label: string,
+    gradient: string
+  ) => {
+    const selected = side === player;
+    return (
+      <button
+        key={player}
+        onClick={() => setSide(player)}
+        style={{
+          flex: 1,
+          padding: "24px 16px",
+          borderRadius: 12,
+          border: selected
+            ? `2px solid transparent`
+            : "2px solid rgba(255,255,255,0.12)",
+          background: selected
+            ? gradient
+            : "rgba(255,255,255,0.05)",
+          backgroundClip: selected ? undefined : undefined,
+          cursor: "pointer",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 12,
+          boxShadow: selected ? "0 0 28px rgba(99,102,241,0.35)" : "none",
+          transition: "all 0.15s ease",
+          outline: "none",
+          position: "relative",
+        }}
+      >
+        {selected && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: 10,
+              border: "2px solid rgba(255,255,255,0.5)",
+              pointerEvents: "none",
+            }}
+          />
+        )}
+        {/* Color swatches */}
+        <div style={{ display: "flex", gap: 8 }}>
+          {colors.map((c) => (
+            <div
+              key={c}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 6,
+                background: COLOR_HEX[c],
+                boxShadow: `0 2px 8px ${COLOR_HEX[c]}88`,
+              }}
+            />
+          ))}
+        </div>
+        <div style={{ fontWeight: 700, fontSize: 15, color: "#f8fafc" }}>
+          {label}
+        </div>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>
+          {colors.map((c) => COLOR_NAME[c]).join(" + ")}
+        </div>
+      </button>
+    );
+  };
 
   return (
-    <div
-      style={{
-        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
-        background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "#f8fafc",
-        gap: 40,
-        padding: 24,
-        boxSizing: "border-box",
-      }}
-    >
+    <div style={LOBBY_BG}>
       <div style={{ textAlign: "center" }}>
-        <h1 style={{ margin: 0, fontSize: 48, letterSpacing: 4, fontWeight: 800 }}>BLOKUS</h1>
+        <h1 style={{ margin: 0, fontSize: 48, letterSpacing: 4, fontWeight: 800 }}>
+          BLOKUS
+        </h1>
         <p style={{ margin: "8px 0 0", color: "#94a3b8", fontSize: 15 }}>
-          Arrow over to claim your team, then start.
+          Hi <strong style={{ color: "#f8fafc" }}>{name}</strong>! Pick your side.
         </p>
       </div>
 
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 560,
-          padding: "28px 24px",
-          border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius: 16,
-          background: "rgba(255,255,255,0.05)",
-          backdropFilter: "blur(8px)",
-          display: "flex",
-          flexDirection: "column",
-          gap: 24,
-        }}
-      >
-        {/* Column headers */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 1fr" }}>
-          <div style={{ display: "flex", justifyContent: "flex-end", paddingRight: 16 }}>
-            {teamHeader([1, 3], "Blue & Red")}
-          </div>
-          <div />
-          <div style={{ paddingLeft: 16 }}>
-            {teamHeader([2, 4], "Yellow & Green")}
-          </div>
+      <div style={{ ...CARD_STYLE, maxWidth: 520 }}>
+        {/* Team cards */}
+        <div style={{ display: "flex", gap: 16 }}>
+          {teamCard("A", [1, 3], "Team A", "linear-gradient(135deg, #1d4ed888, #dc262688)")}
+          {teamCard("B", [2, 4], "Team B", "linear-gradient(135deg, #a1620088, #15803d88)")}
         </div>
 
-        {/* Divider */}
-        <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }} />
-
-        {/* Player rows */}
-        {playerRow("Player 1", p1Side, () => setP1Side(p1Side === "A" ? "B" : "A"))}
-        {playerRow("Player 2", p2Side, () => setP2Side(p2Side === "A" ? "B" : "A"))}
-
-        {!canStart && (
-          <div style={{ textAlign: "center", fontSize: 13, color: "#f59e0b" }}>
-            Both players are on the same team — one must switch.
+        {status === "waiting" && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 14px",
+              borderRadius: 8,
+              background: "rgba(99,102,241,0.15)",
+              border: "1px solid rgba(99,102,241,0.4)",
+              fontSize: 14,
+              color: "#a5b4fc",
+            }}
+          >
+            <Spinner />
+            Waiting for an opponent…
           </div>
         )}
-      </div>
 
-      <button
-        disabled={!canStart}
-        onClick={onStart}
-        style={{
-          padding: "14px 56px",
-          fontSize: 18,
-          fontWeight: 700,
-          borderRadius: 10,
-          border: "none",
-          background: canStart
-            ? "linear-gradient(135deg, #6366f1, #8b5cf6)"
-            : "rgba(255,255,255,0.08)",
-          color: canStart ? "#fff" : "#475569",
-          cursor: canStart ? "pointer" : "not-allowed",
-          boxShadow: canStart ? "0 0 32px rgba(99,102,241,0.5)" : "none",
-          letterSpacing: 1,
-        }}
-      >
-        Start Game
-      </button>
+        <button
+          disabled={!canFind}
+          onClick={() => side && onFindGame(name.trim(), side)}
+          style={{
+            padding: "14px 0",
+            fontSize: 16,
+            fontWeight: 700,
+            borderRadius: 10,
+            border: "none",
+            background: canFind
+              ? "linear-gradient(135deg, #6366f1, #8b5cf6)"
+              : "rgba(255,255,255,0.08)",
+            color: canFind ? "#fff" : "#475569",
+            cursor: canFind ? "pointer" : "not-allowed",
+            boxShadow: canFind ? "0 0 32px rgba(99,102,241,0.5)" : "none",
+            letterSpacing: 1,
+          }}
+        >
+          Find Game
+        </button>
+
+        <button
+          onClick={() => setStep("name")}
+          style={{ ...btn("ghost"), alignSelf: "center", fontSize: 13 }}
+        >
+          ← Back
+        </button>
+      </div>
     </div>
   );
 };
+
+const Spinner: React.FC = () => (
+  <div
+    style={{
+      width: 16,
+      height: 16,
+      border: "2px solid rgba(165,180,252,0.3)",
+      borderTopColor: "#a5b4fc",
+      borderRadius: "50%",
+      animation: "spin 0.8s linear infinite",
+      flexShrink: 0,
+    }}
+  >
+    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+  </div>
+);
 
 export default Blokus;
