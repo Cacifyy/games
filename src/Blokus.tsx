@@ -378,8 +378,10 @@ function deserializeState(s: SerializedState): GameState {
 
 // -------------------- React component --------------------
 
+const DEV_SKIP = new URLSearchParams(window.location.search).has("dev");
+
 const Blokus: React.FC = () => {
-  const [gameStarted, setGameStarted] = useState(false);
+  const [gameStarted, setGameStarted] = useState(DEV_SKIP);
   const [state, setState] = useState<GameState>(makeInitialState);
   const [selectedPieceId, setSelectedPieceId] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<Shape | null>(null);
@@ -413,6 +415,18 @@ const Blokus: React.FC = () => {
   // True when it's this browser's turn to act (or if playing locally with no id assigned).
   const currentPlayer = PLAYER_FOR_COLOR[state.current];
   const isMyTurn = myPlayerId === null || currentPlayer === myPlayerId;
+
+  // The next color belonging to this player that will get to play.
+  const nextUpColor: ColorId | null = useMemo(() => {
+    if (!myPlayerId) return null;
+    const mine = COLORS_FOR[myPlayerId];
+    let idx = COLOR_ORDER.indexOf(state.current);
+    for (let i = 1; i <= 4; i++) {
+      const c = COLOR_ORDER[(idx + i) % 4] as ColorId;
+      if (mine.includes(c) && !state.passed[c] && !state.finished[c]) return c;
+    }
+    return null;
+  }, [myPlayerId, state.current, state.passed, state.finished]);
 
   useEffect(() => {
     if (selectedPieceId) {
@@ -877,13 +891,67 @@ const Blokus: React.FC = () => {
             </div>
           )}
 
-          <PieceTray
-            color={state.current}
-            remaining={state.remaining}
-            selectedPieceId={selectedPieceId}
-            onPick={(id) => setSelectedPieceId(id)}
-            disabled={gameOver || !isMyTurn}
-          />
+          {!gameOver && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+              {(myPlayerId ? COLORS_FOR[myPlayerId] : [state.current]).map((color) => {
+                const isActive = isMyTurn && color === state.current;
+                const isNext = !isActive && color === nextUpColor;
+                return (
+                  <div
+                    key={color}
+                    style={{
+                      border: isActive
+                        ? `2px solid ${COLOR_HEX[color]}`
+                        : `1px solid rgba(255,255,255,0.1)`,
+                      borderRadius: 8,
+                      padding: "10px 10px 8px",
+                      background: isActive ? `${COLOR_HEX[color]}11` : "rgba(255,255,255,0.02)",
+                      boxShadow: isActive ? `0 0 20px ${COLOR_HEX[color]}33` : "none",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <span
+                        style={{
+                          width: 10, height: 10, borderRadius: 2,
+                          background: COLOR_HEX[color], flexShrink: 0,
+                        }}
+                      />
+                      <strong style={{ fontSize: 13 }}>{COLOR_NAME[color]}</strong>
+                      <span style={{ fontSize: 11, color: "#64748b" }}>
+                        {state.remaining[color].size} left
+                      </span>
+                      {isActive && (
+                        <span style={{
+                          marginLeft: "auto", fontSize: 11, fontWeight: 700,
+                          background: COLOR_HEX[color], color: "#fff",
+                          padding: "2px 8px", borderRadius: 10,
+                        }}>
+                          Playing now
+                        </span>
+                      )}
+                      {isNext && (
+                        <span style={{
+                          marginLeft: "auto", fontSize: 11,
+                          color: "#94a3b8", padding: "2px 8px", borderRadius: 10,
+                          border: "1px solid rgba(255,255,255,0.15)",
+                        }}>
+                          Up next
+                        </span>
+                      )}
+                    </div>
+                    <PieceTray
+                      color={color}
+                      remaining={state.remaining}
+                      selectedPieceId={isActive ? selectedPieceId : null}
+                      onPick={isActive ? (id) => setSelectedPieceId(id) : () => {}}
+                      disabled={!isActive}
+                      hideTitle
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -978,12 +1046,15 @@ const PieceTray: React.FC<{
   selectedPieceId: string | null;
   onPick: (id: string) => void;
   disabled: boolean;
-}> = ({ color, remaining, selectedPieceId, onPick, disabled }) => {
+  hideTitle?: boolean;
+}> = ({ color, remaining, selectedPieceId, onPick, disabled, hideTitle }) => {
   return (
-    <div style={{ marginTop: 12 }}>
-      <h4 style={{ margin: "8px 0" }}>
-        {COLOR_NAME[color]}'s remaining pieces
-      </h4>
+    <div style={{ marginTop: hideTitle ? 0 : 12 }}>
+      {!hideTitle && (
+        <h4 style={{ margin: "8px 0" }}>
+          {COLOR_NAME[color]}'s remaining pieces
+        </h4>
+      )}
       <div
         style={{
           display: "grid",
