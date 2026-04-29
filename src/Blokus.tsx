@@ -633,7 +633,7 @@ const Blokus: React.FC = () => {
 
   // Resolve display names: if networked, show actual names; otherwise generic labels.
   const nameFor = (player: PlayerId): string => {
-    if (!myPlayerId) return player === "A" ? "Player A (Blue + Red)" : "Player B (Yellow + Green)";
+    if (!myPlayerId) return player === "A" ? "Player A" : "Player B";
     if (player === myPlayerId) return `${myName} (${player === "A" ? "Blue + Red" : "Yellow + Green"})`;
     return `${opponentName} (${player === "A" ? "Blue + Red" : "Yellow + Green"})`;
   };
@@ -665,7 +665,7 @@ const Blokus: React.FC = () => {
         minHeight: "100vh",
       }}
     >
-      <h2 style={{ marginTop: 0 }}>Blokus — 4 colors, 2 players</h2>
+      <h2 style={{ marginTop: 0 }}>Goodluck!</h2>
       <div
         style={{
           display: "flex",
@@ -799,7 +799,7 @@ const Blokus: React.FC = () => {
 
         {/* Side panel */}
         <div style={{ minWidth: 360, maxWidth: 520 }}>
-          <ScorePanel state={state} teamA={teamA} teamB={teamB} nameFor={nameFor} />
+          <ScorePanel state={state} teamA={teamA} teamB={teamB} nameFor={nameFor} gameOver={gameOver} />
 
           {!gameOver && (
             <div
@@ -954,8 +954,6 @@ const Blokus: React.FC = () => {
           )}
         </div>
       </div>
-
-      <RulesFooter />
     </div>
   );
 };
@@ -967,7 +965,8 @@ const ScorePanel: React.FC<{
   teamA: number;
   teamB: number;
   nameFor: (p: PlayerId) => string;
-}> = ({ state, teamA, teamB, nameFor }) => {
+  gameOver: boolean;
+}> = ({ state, teamA, teamB, nameFor, gameOver }) => {
   const colorRow = (c: ColorId) => (
     <div
       key={c}
@@ -1003,7 +1002,9 @@ const ScorePanel: React.FC<{
         )}
       </div>
       <div style={{ fontSize: 12 }}>
-        Left: {state.remaining[c].size} • Score: {colorScore(state, c)}
+        {gameOver
+          ? `Pieces left: ${state.remaining[c].size} • Score: ${colorScore(state, c)}`
+          : `Pieces left: ${state.remaining[c].size}`}
       </div>
     </div>
   );
@@ -1026,7 +1027,7 @@ const ScorePanel: React.FC<{
         }}
       >
         <strong style={{ fontSize: 13 }}>{nameFor(player)}</strong>
-        <span>Total: {total}</span>
+        {gameOver && <span>Total: {total}</span>}
       </div>
       {COLORS_FOR[player].map(colorRow)}
     </div>
