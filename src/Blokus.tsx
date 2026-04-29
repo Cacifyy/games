@@ -63,11 +63,13 @@ const BOARD_SIZE = 20;
 
 const COLOR_ORDER: ColorId[] = [1, 2, 3, 4];
 
+// Blue + Red share the bottom edge (Player A's home side).
+// Yellow + Green share the top edge (Player B's home side — they see the board rotated 180°).
 const START_SQUARES: Record<ColorId, [number, number]> = {
-  1: [0, 0],
-  2: [0, BOARD_SIZE - 1],
-  3: [BOARD_SIZE - 1, BOARD_SIZE - 1],
-  4: [BOARD_SIZE - 1, 0],
+  1: [BOARD_SIZE - 1, 0],              // Blue:   bottom-left
+  2: [0, BOARD_SIZE - 1],              // Yellow: top-right  (bottom-left from B's rotated view)
+  3: [BOARD_SIZE - 1, BOARD_SIZE - 1], // Red:    bottom-right
+  4: [0, 0],                           // Green:  top-left   (bottom-right from B's rotated view)
 };
 
 const COLOR_NAME: Record<ColorId, string> = {
@@ -692,6 +694,7 @@ const Blokus: React.FC = () => {
                 gridTemplateRows: `repeat(${BOARD_SIZE}, ${cellSize}px)`,
                 gap: 1,
                 background: "#1e293b",
+                transform: myPlayerId === "B" ? "rotate(180deg)" : undefined,
               }}
               onMouseLeave={() => setHover(null)}
             >
@@ -815,7 +818,7 @@ const Blokus: React.FC = () => {
             >
               <div style={{ fontWeight: 600, marginBottom: 4 }}>
                 {isMyTurn
-                  ? `Your turn — ${nameFor(currentPlayer)}`
+                  ? `Your turn: ${nameFor(currentPlayer)}`
                   : `Waiting for ${nameFor(currentPlayer)}…`}
               </div>
               <div style={{ marginBottom: 6, color: "#94a3b8", fontSize: 14 }}>
