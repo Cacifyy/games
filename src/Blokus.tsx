@@ -643,7 +643,18 @@ const Blokus: React.FC = () => {
 
   // -------------------- Rendering --------------------
 
-  const cellSize = 26;
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const isMobile = windowWidth < 700;
+  // Leave room for page padding (32px) and 1px gaps between cells (19px).
+  const cellSize = isMobile
+    ? Math.max(14, Math.floor((windowWidth - 32 - 19) / BOARD_SIZE))
+    : 26;
 
   const teamA = teamScore(state, "A");
   const teamB = teamScore(state, "B");
@@ -685,9 +696,9 @@ const Blokus: React.FC = () => {
       <div
         style={{
           display: "flex",
-          gap: 24,
+          gap: 16,
           alignItems: "flex-start",
-          flexWrap: "wrap",
+          flexDirection: isMobile ? "column" : "row",
         }}
       >
         {/* Board */}
@@ -777,21 +788,6 @@ const Blokus: React.FC = () => {
             </div>
           </div>
 
-          {message && (
-            <div
-              style={{
-                marginTop: 8,
-                padding: "6px 10px",
-                background: "#fef3c7",
-                border: "1px solid #fde68a",
-                borderRadius: 4,
-                display: "inline-block",
-                color: "#78350f",
-              }}
-            >
-              {message}
-            </div>
-          )}
 
           {gameOver && (
             <div
@@ -815,8 +811,24 @@ const Blokus: React.FC = () => {
         </div>
 
         {/* Side panel */}
-        <div style={{ minWidth: 360, maxWidth: 520 }}>
+        <div style={{ width: isMobile ? "100%" : undefined, minWidth: isMobile ? 0 : 360, maxWidth: isMobile ? "100%" : 520 }}>
           <ScorePanel state={state} teamA={teamA} teamB={teamB} nameFor={nameFor} gameOver={gameOver} />
+
+          {message && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: "6px 10px",
+                background: "#fef3c7",
+                border: "1px solid #fde68a",
+                borderRadius: 4,
+                color: "#78350f",
+                fontSize: 13,
+              }}
+            >
+              {message}
+            </div>
+          )}
 
           {!gameOver && (
             <div
@@ -1021,10 +1033,10 @@ const ScorePanel: React.FC<{
           <span style={{ fontSize: 11, color: "#16a34a" }}>(done!)</span>
         )}
       </div>
-      <div style={{ fontSize: 12 }}>
+      <div style={{ fontSize: 12, whiteSpace: "nowrap" }}>
         {gameOver
-          ? `Pieces left: ${state.remaining[c].size} • Score: ${colorScore(state, c)}`
-          : `Pieces left: ${state.remaining[c].size}`}
+          ? `${state.remaining[c].size} left • Score: ${colorScore(state, c)}`
+          : `${state.remaining[c].size} left`}
       </div>
     </div>
   );
