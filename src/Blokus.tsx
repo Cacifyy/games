@@ -651,11 +651,19 @@ const Blokus: React.FC = () => {
   }, []);
 
   const isMobile = windowWidth < 600;
-  // On desktop: board takes ~58% of viewport width; right panel fills the rest.
-  // On mobile: board fills full width minus padding.
+  // Board occupies ~46% of viewport on desktop; panel gets the rest (up to 700px).
   const cellSize = isMobile
-    ? Math.max(14, Math.floor((windowWidth - 32) / BOARD_SIZE))
-    : Math.min(36, Math.max(20, Math.floor((windowWidth * 0.58 - 32) / BOARD_SIZE)));
+    ? Math.min(14, Math.max(11, Math.floor((windowWidth - 40) / BOARD_SIZE)))
+    : Math.min(34, Math.max(18, Math.floor((windowWidth * 0.46 - 32) / BOARD_SIZE)));
+
+  // Derive tray cell size from actual available panel width.
+  const boardPx = cellSize * BOARD_SIZE + 20 + 8;
+  const containerW = Math.min(1600, windowWidth) - 48;
+  const panelW = isMobile
+    ? containerW
+    : Math.min(700, Math.max(380, containerW - boardPx - 20));
+  const trayW = (panelW - 8) / 2;
+  const trayCellPx = Math.max(8, Math.min(14, Math.floor(trayW / 26)));
 
   const teamA = teamScore(state, "A");
   const teamB = teamScore(state, "B");
@@ -792,29 +800,10 @@ const Blokus: React.FC = () => {
           </div>
 
 
-          {gameOver && (
-            <div
-              style={{
-                marginTop: 12,
-                padding: 12,
-                background: "#dcfce7",
-                border: "1px solid #86efac",
-                borderRadius: 6,
-                color: "#14532d",
-              }}
-            >
-              <strong>Game over.</strong> {winnerText}
-              <div style={{ marginTop: 8 }}>
-                <button onClick={resetGame} style={btn()}>
-                  Play again
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Side panel */}
-        <div style={{ width: isMobile ? "100%" : undefined, minWidth: isMobile ? 0 : 360, maxWidth: isMobile ? "100%" : 520 }}>
+        <div style={{ width: isMobile ? "100%" : undefined, minWidth: isMobile ? 0 : 380, maxWidth: isMobile ? "100%" : 700 }}>
           <ScorePanel state={state} teamA={teamA} teamB={teamB} nameFor={nameFor} gameOver={gameOver} />
 
           {message && (
@@ -980,7 +969,7 @@ const Blokus: React.FC = () => {
                       onPick={isActive ? (id) => setSelectedPieceId(id) : () => {}}
                       disabled={!isActive}
                       hideTitle
-                      cellPx={7}
+                      cellPx={trayCellPx}
                     />
                   </div>
                 );
@@ -990,6 +979,106 @@ const Blokus: React.FC = () => {
         </div>
       </div>
       </div>
+
+      {/* Game-over modal */}
+      {gameOver && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.75)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              background: "linear-gradient(160deg, #1e1b4b 0%, #0f172a 100%)",
+              border: "1px solid rgba(255,255,255,0.15)",
+              borderRadius: 20,
+              padding: "40px 36px",
+              maxWidth: 420,
+              width: "100%",
+              textAlign: "center",
+              boxShadow: "0 0 80px rgba(99,102,241,0.4), 0 24px 64px rgba(0,0,0,0.7)",
+            }}
+          >
+            <div style={{ fontSize: 56, marginBottom: 12 }}>
+              {teamA < teamB ? "🏆" : teamB < teamA ? "🏆" : "🤝"}
+            </div>
+            <h2 style={{ margin: "0 0 8px", fontSize: 28, fontWeight: 800, letterSpacing: 1 }}>
+              Game Over
+            </h2>
+            <p style={{ margin: "0 0 28px", color: "#a5b4fc", fontSize: 16 }}>
+              {winnerText}
+            </p>
+
+            {/* Score reveal */}
+            <div style={{ display: "flex", gap: 12, marginBottom: 28 }}>
+              {(["A", "B"] as PlayerId[]).map((player) => {
+                const score = player === "A" ? teamA : teamB;
+                const isWinner = (player === "A" && teamA < teamB) || (player === "B" && teamB < teamA);
+                return (
+                  <div
+                    key={player}
+                    style={{
+                      flex: 1,
+                      padding: "14px 12px",
+                      borderRadius: 12,
+                      border: isWinner
+                        ? "1px solid rgba(99,102,241,0.6)"
+                        : "1px solid rgba(255,255,255,0.1)",
+                      background: isWinner
+                        ? "rgba(99,102,241,0.15)"
+                        : "rgba(255,255,255,0.04)",
+                    }}
+                  >
+                    <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 4 }}>
+                      {nameFor(player)}
+                    </div>
+                    <div style={{ fontSize: 28, fontWeight: 800, color: isWinner ? "#a5b4fc" : "#f8fafc" }}>
+                      {score}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#64748b" }}>points remaining</div>
+                    {COLORS_FOR[player].map((c) => (
+                      <div key={c} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: 2, background: COLOR_HEX[c], display: "inline-block" }} />
+                          {COLOR_NAME[c]}
+                        </span>
+                        <span style={{ fontSize: 12, color: "#94a3b8" }}>{colorScore(state, c)}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={resetGame}
+              style={{
+                width: "100%",
+                padding: "14px 0",
+                fontSize: 16,
+                fontWeight: 700,
+                borderRadius: 10,
+                border: "none",
+                background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                color: "#fff",
+                cursor: "pointer",
+                boxShadow: "0 0 32px rgba(99,102,241,0.5)",
+                letterSpacing: 1,
+              }}
+            >
+              Play Again
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1133,7 +1222,6 @@ const PieceTray: React.FC<{
                 cellPx={cellPx}
                 muted={!available}
               />
-              <span style={{ fontSize: 9, color: "#94a3b8" }}>{p.id}</span>
             </button>
           );
         })}
