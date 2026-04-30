@@ -652,8 +652,10 @@ const Blokus: React.FC = () => {
 
   const isMobile = windowWidth < 600;
   // Board occupies ~46% of viewport on desktop; panel gets the rest (up to 700px).
+  // Mobile: fill available width (outer padding 48px + board card padding 8px + 19 gaps = 75px overhead).
+  // Desktop: board takes ~46% of viewport.
   const cellSize = isMobile
-    ? Math.min(14, Math.max(11, Math.floor((windowWidth - 40) / BOARD_SIZE)))
+    ? Math.max(11, Math.floor((windowWidth - 75) / BOARD_SIZE))
     : Math.min(34, Math.max(18, Math.floor((windowWidth * 0.46 - 32) / BOARD_SIZE)));
 
   // Derive tray cell size from actual available panel width.
@@ -697,13 +699,12 @@ const Blokus: React.FC = () => {
           "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
         padding: 24,
         color: "#f8fafc",
-        background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
+        background: "linear-gradient(135deg, #0d1117 0%, #1f0d14 50%, #0d1117 100%)",
         minHeight: "100vh",
         boxSizing: "border-box",
       }}
     >
       <div style={{ maxWidth: 1600, margin: "0 auto" }}>
-      <h2 style={{ marginTop: 0 }}>Goodluck!</h2>
       <div
         style={{
           display: "flex",
@@ -713,14 +714,14 @@ const Blokus: React.FC = () => {
         }}
       >
         {/* Board */}
-        <div>
+        <div style={isMobile ? { display: "flex", justifyContent: "center", width: "100%" } : undefined}>
           <div
             style={{
               display: "inline-block",
               padding: 4,
-              background: "#0f172a",
+              background: "#0d1117",
               borderRadius: 8,
-              boxShadow: "0 0 40px rgba(99, 102, 241, 0.3), 0 8px 32px rgba(0,0,0,0.6)",
+              boxShadow: "0 0 40px rgba(16, 185, 129, 0.25), 0 8px 32px rgba(0,0,0,0.6)",
             }}
           >
             <div
@@ -729,7 +730,7 @@ const Blokus: React.FC = () => {
                 gridTemplateColumns: `repeat(${BOARD_SIZE}, ${cellSize}px)`,
                 gridTemplateRows: `repeat(${BOARD_SIZE}, ${cellSize}px)`,
                 gap: 1,
-                background: "#1e293b",
+                background: "#161b22",
                 transform: myPlayerId === "B" ? "rotate(180deg)" : undefined,
               }}
               onMouseLeave={() => setHover(null)}
@@ -997,14 +998,14 @@ const Blokus: React.FC = () => {
         >
           <div
             style={{
-              background: "linear-gradient(160deg, #1e1b4b 0%, #0f172a 100%)",
+              background: "linear-gradient(160deg, #1f0d14 0%, #0d1117 100%)",
               border: "1px solid rgba(255,255,255,0.15)",
               borderRadius: 20,
               padding: "40px 36px",
               maxWidth: 420,
               width: "100%",
               textAlign: "center",
-              boxShadow: "0 0 80px rgba(99,102,241,0.4), 0 24px 64px rgba(0,0,0,0.7)",
+              boxShadow: "0 0 80px rgba(236,72,153,0.3), 0 24px 64px rgba(0,0,0,0.7)",
             }}
           >
             <div style={{ fontSize: 56, marginBottom: 12 }}>
@@ -1013,7 +1014,7 @@ const Blokus: React.FC = () => {
             <h2 style={{ margin: "0 0 8px", fontSize: 28, fontWeight: 800, letterSpacing: 1 }}>
               Game Over
             </h2>
-            <p style={{ margin: "0 0 28px", color: "#a5b4fc", fontSize: 16 }}>
+            <p style={{ margin: "0 0 28px", color: "#f9a8d4", fontSize: 16 }}>
               {winnerText}
             </p>
 
@@ -1030,17 +1031,17 @@ const Blokus: React.FC = () => {
                       padding: "14px 12px",
                       borderRadius: 12,
                       border: isWinner
-                        ? "1px solid rgba(99,102,241,0.6)"
+                        ? "1px solid rgba(236,72,153,0.6)"
                         : "1px solid rgba(255,255,255,0.1)",
                       background: isWinner
-                        ? "rgba(99,102,241,0.15)"
+                        ? "rgba(236,72,153,0.15)"
                         : "rgba(255,255,255,0.04)",
                     }}
                   >
                     <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 4 }}>
                       {nameFor(player)}
                     </div>
-                    <div style={{ fontSize: 28, fontWeight: 800, color: isWinner ? "#a5b4fc" : "#f8fafc" }}>
+                    <div style={{ fontSize: 28, fontWeight: 800, color: isWinner ? "#f9a8d4" : "#f8fafc" }}>
                       {score}
                     </div>
                     <div style={{ fontSize: 11, color: "#64748b" }}>points remaining</div>
@@ -1067,10 +1068,10 @@ const Blokus: React.FC = () => {
                 fontWeight: 700,
                 borderRadius: 10,
                 border: "none",
-                background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                background: "linear-gradient(135deg, #ec4899, #be185d)",
                 color: "#fff",
                 cursor: "pointer",
-                boxShadow: "0 0 32px rgba(99,102,241,0.5)",
+                boxShadow: "0 0 32px rgba(236,72,153,0.5)",
                 letterSpacing: 1,
               }}
             >
@@ -1105,7 +1106,7 @@ const ScorePanel: React.FC<{
         borderRadius: 4,
         marginBottom: 4,
         opacity: state.passed[c] ? 0.6 : 1,
-        color: state.current === c ? "#0f172a" : "#f8fafc",
+        color: state.current === c ? "#0d1117" : "#f8fafc",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1290,7 +1291,7 @@ function btn(variant: "primary" | "warn" | "ghost" = "primary"): React.CSSProper
 
 const LOBBY_BG: React.CSSProperties = {
   fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
-  background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
+  background: "linear-gradient(135deg, #0d1117 0%, #1f0d14 50%, #0d1117 100%)",
   minHeight: "100vh",
   display: "flex",
   flexDirection: "column",
@@ -1335,7 +1336,7 @@ const LobbyPage: React.FC<{
       <div style={LOBBY_BG}>
         <div style={{ textAlign: "center" }}>
           <h1 style={{ margin: 0, fontSize: 48, letterSpacing: 4, fontWeight: 800 }}>
-            BLOKUS
+            BLOKUS BESTIES
           </h1>
           <p style={{ margin: "8px 0 0", color: "#94a3b8", fontSize: 15 }}>
             4 colors · classic rules
@@ -1376,12 +1377,12 @@ const LobbyPage: React.FC<{
               border: "none",
               background:
                 name.trim().length > 0
-                  ? "linear-gradient(135deg, #6366f1, #8b5cf6)"
+                  ? "linear-gradient(135deg, #ec4899, #be185d)"
                   : "rgba(255,255,255,0.08)",
               color: name.trim().length > 0 ? "#fff" : "#475569",
               cursor: name.trim().length > 0 ? "pointer" : "not-allowed",
               boxShadow:
-                name.trim().length > 0 ? "0 0 32px rgba(99,102,241,0.5)" : "none",
+                name.trim().length > 0 ? "0 0 32px rgba(236,72,153,0.5)" : "none",
               letterSpacing: 1,
             }}
           >
@@ -1420,7 +1421,7 @@ const LobbyPage: React.FC<{
           flexDirection: "column",
           alignItems: "center",
           gap: 12,
-          boxShadow: selected ? "0 0 28px rgba(99,102,241,0.35)" : "none",
+          boxShadow: selected ? "0 0 28px rgba(236,72,153,0.35)" : "none",
           transition: "all 0.15s ease",
           outline: "none",
           position: "relative",
@@ -1466,7 +1467,7 @@ const LobbyPage: React.FC<{
     <div style={LOBBY_BG}>
       <div style={{ textAlign: "center" }}>
         <h1 style={{ margin: 0, fontSize: 48, letterSpacing: 4, fontWeight: 800 }}>
-          BLOKUS
+          BLOKUS BESTIES
         </h1>
         <p style={{ margin: "8px 0 0", color: "#94a3b8", fontSize: 15 }}>
           Hi <strong style={{ color: "#f8fafc" }}>{name}</strong>! Pick your side.
@@ -1488,10 +1489,10 @@ const LobbyPage: React.FC<{
               gap: 10,
               padding: "10px 14px",
               borderRadius: 8,
-              background: "rgba(99,102,241,0.15)",
-              border: "1px solid rgba(99,102,241,0.4)",
+              background: "rgba(236,72,153,0.15)",
+              border: "1px solid rgba(236,72,153,0.4)",
               fontSize: 14,
-              color: "#a5b4fc",
+              color: "#f9a8d4",
             }}
           >
             <Spinner />
@@ -1509,11 +1510,11 @@ const LobbyPage: React.FC<{
             borderRadius: 10,
             border: "none",
             background: canFind
-              ? "linear-gradient(135deg, #6366f1, #8b5cf6)"
+              ? "linear-gradient(135deg, #ec4899, #be185d)"
               : "rgba(255,255,255,0.08)",
             color: canFind ? "#fff" : "#475569",
             cursor: canFind ? "pointer" : "not-allowed",
-            boxShadow: canFind ? "0 0 32px rgba(99,102,241,0.5)" : "none",
+            boxShadow: canFind ? "0 0 32px rgba(236,72,153,0.5)" : "none",
             letterSpacing: 1,
           }}
         >
@@ -1536,8 +1537,8 @@ const Spinner: React.FC = () => (
     style={{
       width: 16,
       height: 16,
-      border: "2px solid rgba(165,180,252,0.3)",
-      borderTopColor: "#a5b4fc",
+      border: "2px solid rgba(249,168,212,0.3)",
+      borderTopColor: "#f9a8d4",
       borderRadius: "50%",
       animation: "spin 0.8s linear infinite",
       flexShrink: 0,
