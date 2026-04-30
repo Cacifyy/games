@@ -915,11 +915,13 @@ const Blokus: React.FC = () => {
                     Click a board cell to place — that cell becomes the piece's
                     top-left corner:
                   </div>
-                  <ShapePreview
-                    shape={orientation}
-                    color={COLOR_HEX[state.current]}
-                    cellPx={20}
-                  />
+                  <div style={{ transform: myPlayerId === "B" ? "rotate(180deg)" : undefined, display: "inline-block" }}>
+                    <ShapePreview
+                      shape={orientation}
+                      color={COLOR_HEX[state.current]}
+                      cellPx={20}
+                    />
+                  </div>
                 </div>
               )}
             </div>
