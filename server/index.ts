@@ -1,13 +1,29 @@
 import { WebSocketServer, WebSocket } from "ws";
 import http from "http";
+import crypto from "crypto";
 
 type PlayerId = "A" | "B";
 
-interface JoinMsg { type: "join"; name: string; preferredSide: PlayerId }
-interface MoveMsg { type: "move"; state: unknown }
-type ClientMsg = JoinMsg | MoveMsg;
+interface JoinMsg   { type: "join";   name: string; preferredSide: PlayerId }
+interface RejoinMsg { type: "rejoin"; token: string }
+interface MoveMsg   { type: "move";  state: unknown }
+type ClientMsg = JoinMsg | RejoinMsg | MoveMsg;
 
 const PORT = Number(process.env.PORT ?? 3001);
+const GRACE_MS = 60_000; // wait 60s before declaring a player gone
+
+interface PlayerSlot {
+  token: string;
+  name: string;
+  ws: WebSocket | null;
+  disconnectTimer: ReturnType<typeof setTimeout> | null;
+}
+
+interface Game {
+  id: string;
+  players: Record<PlayerId, PlayerSlot>;
+  state: unknown; // latest serialized game state (null until first move)
+}
 
 const httpServer = http.createServer((_req, res) => {
   res.writeHead(200, { "Content-Type": "text/plain" });
@@ -16,16 +32,21 @@ const httpServer = http.createServer((_req, res) => {
 
 const wss = new WebSocketServer({ server: httpServer });
 
-// Maps each connected socket to its paired partner.
-const partners = new Map<WebSocket, WebSocket>();
+// token  → session info
+const sessions = new Map<string, { game: Game; playerId: PlayerId }>();
+// socket → session info
+const sockets  = new Map<WebSocket, { game: Game; playerId: PlayerId }>();
 
-// First player to join waits here until a second arrives.
 let waiting: { ws: WebSocket; name: string; preferredSide: PlayerId } | null = null;
 
-function send(ws: WebSocket, payload: object): void {
-  if (ws.readyState === WebSocket.OPEN) {
+function send(ws: WebSocket | null, payload: object): void {
+  if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(payload));
   }
+}
+
+function other(side: PlayerId): PlayerId {
+  return side === "A" ? "B" : "A";
 }
 
 wss.on("connection", (ws) => {
@@ -33,53 +54,120 @@ wss.on("connection", (ws) => {
 
   ws.on("message", (raw) => {
     let msg: ClientMsg;
-    try {
-      msg = JSON.parse(raw.toString()) as ClientMsg;
-    } catch {
+    try { msg = JSON.parse(raw.toString()) as ClientMsg; }
+    catch { return; }
+
+    // ── Rejoin ──────────────────────────────────────────────────────────────
+    if (msg.type === "rejoin") {
+      const session = sessions.get(msg.token);
+      if (!session) {
+        send(ws, { type: "rejoin_failed" });
+        console.log(`Rejoin failed — token not found`);
+        return;
+      }
+
+      const { game, playerId } = session;
+      const slot        = game.players[playerId];
+      const partnerSlot = game.players[other(playerId)];
+
+      // Cancel the grace timer
+      if (slot.disconnectTimer) {
+        clearTimeout(slot.disconnectTimer);
+        slot.disconnectTimer = null;
+      }
+
+      // Swap old socket for new one
+      if (slot.ws) {
+        sockets.delete(slot.ws);
+        slot.ws.onclose = null;
+        slot.ws.close();
+      }
+      slot.ws = ws;
+      sockets.set(ws, { game, playerId });
+
+      send(ws, {
+        type: "rejoined",
+        playerId,
+        opponentName: partnerSlot.name,
+        state: game.state ?? null,
+      });
+      send(partnerSlot.ws, { type: "opponent_reconnected" });
+      console.log(`${slot.name} rejoined game ${game.id}`);
       return;
     }
 
+    // ── New join ─────────────────────────────────────────────────────────────
     if (msg.type === "join") {
       if (!waiting) {
-        // First to arrive — wait for a partner.
         waiting = { ws, name: msg.name, preferredSide: msg.preferredSide };
         send(ws, { type: "waiting" });
         console.log(`${msg.name} is waiting for an opponent`);
       } else {
-        // Second player — pair them up, honoring side preferences when possible.
         const { ws: partnerWs, name: partnerName, preferredSide: partnerPref } = waiting;
         waiting = null;
 
-        partners.set(ws, partnerWs);
-        partners.set(partnerWs, ws);
+        const gameId   = crypto.randomUUID();
+        const tokenA   = crypto.randomUUID();
+        const tokenB   = crypto.randomUUID();
+        const sideA: PlayerId = partnerPref;
+        const sideB: PlayerId = other(sideA);
 
-        // First connected keeps their pick; second gets whatever's left.
-        const partnerSide: PlayerId = partnerPref;
-        const newSide: PlayerId = partnerSide === "A" ? "B" : "A";
+        const game: Game = {
+          id: gameId,
+          players: {
+            [sideA]: { token: tokenA, name: partnerName, ws: partnerWs, disconnectTimer: null },
+            [sideB]: { token: tokenB, name: msg.name,    ws,            disconnectTimer: null },
+          } as Record<PlayerId, PlayerSlot>,
+          state: null,
+        };
 
-        send(partnerWs, { type: "start", playerId: partnerSide, opponentName: msg.name });
-        send(ws,        { type: "start", playerId: newSide,     opponentName: partnerName });
-        console.log(`Paired: ${partnerName} (${partnerSide}) vs ${msg.name} (${newSide})`);
+        sessions.set(tokenA, { game, playerId: sideA });
+        sessions.set(tokenB, { game, playerId: sideB });
+        sockets.set(partnerWs, { game, playerId: sideA });
+        sockets.set(ws,        { game, playerId: sideB });
+
+        send(partnerWs, { type: "start", playerId: sideA, opponentName: msg.name,    token: tokenA });
+        send(ws,        { type: "start", playerId: sideB, opponentName: partnerName, token: tokenB });
+        console.log(`Paired: ${partnerName} (${sideA}) vs ${msg.name} (${sideB}) [${gameId}]`);
       }
       return;
     }
 
+    // ── Move relay ───────────────────────────────────────────────────────────
     if (msg.type === "move") {
-      const partner = partners.get(ws);
-      if (partner) send(partner, { type: "state", state: msg.state });
+      const session = sockets.get(ws);
+      if (!session) return;
+      const { game, playerId } = session;
+      game.state = msg.state; // persist latest state for reconnectors
+      send(game.players[other(playerId)].ws, { type: "state", state: msg.state });
     }
   });
 
   ws.on("close", () => {
     console.log(`Client disconnected (${wss.clients.size} remaining)`);
-    if (waiting?.ws === ws) waiting = null;
 
-    const partner = partners.get(ws);
-    if (partner) {
-      send(partner, { type: "opponent_disconnected" });
-      partners.delete(partner);
-    }
-    partners.delete(ws);
+    if (waiting?.ws === ws) { waiting = null; return; }
+
+    const session = sockets.get(ws);
+    if (!session) return;
+    sockets.delete(ws);
+
+    const { game, playerId } = session;
+    const slot        = game.players[playerId];
+    const partnerSlot = game.players[other(playerId)];
+
+    slot.ws = null;
+
+    // Start grace period — notify partner only if player doesn't come back.
+    slot.disconnectTimer = setTimeout(() => {
+      slot.disconnectTimer = null;
+      send(partnerSlot.ws, { type: "opponent_disconnected" });
+      sessions.delete(slot.token);
+      sessions.delete(partnerSlot.token);
+      console.log(`Game ${game.id} ended — ${slot.name} did not reconnect in time`);
+    }, GRACE_MS);
+
+    console.log(`${slot.name} disconnected — ${GRACE_MS / 1000}s grace period started`);
   });
 });
 

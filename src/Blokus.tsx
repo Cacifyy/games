@@ -487,8 +487,20 @@ const Blokus: React.FC = () => {
         setOpponentName(event.opponentName);
         setGameStarted(true);
         setLobbyStatus("idle");
+        setMessage("");
+      } else if (event.type === "rejoined") {
+        setMyPlayerId(event.playerId as PlayerId);
+        setOpponentName(event.opponentName);
+        if (event.state) setState(deserializeState(event.state));
+        setGameStarted(true);
+        setLobbyStatus("idle");
+        setMessage("Reconnected!");
       } else if (event.type === "state") {
         setState(deserializeState(event.state));
+      } else if (event.type === "reconnecting") {
+        setMessage("Connection lost — reconnecting…");
+      } else if (event.type === "opponent_reconnected") {
+        setMessage("Opponent reconnected!");
       } else if (event.type === "opponent_disconnected") {
         setMessage("Opponent disconnected.");
       }
