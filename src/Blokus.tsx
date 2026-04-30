@@ -389,6 +389,8 @@ const Blokus: React.FC = () => {
   const [orientation, setOrientation] = useState<Shape | null>(null);
   const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
   const [message, setMessage] = useState<string>("");
+  const [gameOverDismissed, setGameOverDismissed] = useState(false);
+  const [rematchWaiting, setRematchWaiting] = useState(false);
 
   // Multiplayer state
   const socketRef = useRef<BlokusSocket | null>(null);
@@ -487,6 +489,7 @@ const Blokus: React.FC = () => {
         setOpponentName(event.opponentName);
         setGameStarted(true);
         setLobbyStatus("idle");
+        setRematchWaiting(false);
         setMessage("");
       } else if (event.type === "rejoined") {
         setMyPlayerId(event.playerId as PlayerId);
@@ -494,6 +497,7 @@ const Blokus: React.FC = () => {
         if (event.state) setState(deserializeState(event.state));
         setGameStarted(true);
         setLobbyStatus("idle");
+        setRematchWaiting(false);
         setMessage("Reconnected!");
       } else if (event.type === "state") {
         setState(deserializeState(event.state));
@@ -627,6 +631,26 @@ const Blokus: React.FC = () => {
     setOpponentName("");
     setLobbyStatus("idle");
     setGameStarted(false);
+    setGameOverDismissed(false);
+    setRematchWaiting(false);
+  }
+
+  function handleRematch() {
+    const nextSide: PlayerId = myPlayerId === "A" ? "B" : "A";
+    const name = myName;
+    socketRef.current?.close();
+    socketRef.current = null;
+    setState(makeInitialState());
+    setSelectedPieceId(null);
+    setOrientation(null);
+    setHover(null);
+    setMessage("");
+    setGameOverDismissed(false);
+    setMyPlayerId(null);
+    setOpponentName("");
+    setGameStarted(false);
+    setRematchWaiting(true);
+    handleFindGame(name, nextSide);
   }
 
   const preview = useMemo(() => {
@@ -696,6 +720,20 @@ const Blokus: React.FC = () => {
   }
 
   if (!gameStarted) {
+    if (rematchWaiting) {
+      return (
+        <div style={{ ...LOBBY_BG, gap: 16 }}>
+          <h1 style={{ margin: 0, fontSize: 48, letterSpacing: 4, fontWeight: 800 }}>BLOKUS BESTIES</h1>
+          <div style={{ ...CARD_STYLE, alignItems: "center", textAlign: "center" }}>
+            <Spinner />
+            <p style={{ margin: 0, color: "#94a3b8", fontSize: 15 }}>
+              Waiting for {opponentName || "opponent"} to rematch…
+            </p>
+            <button onClick={resetGame} style={{ ...btn("ghost"), fontSize: 13 }}>Cancel</button>
+          </div>
+        </div>
+      );
+    }
     return (
       <LobbyPage
         status={lobbyStatus}
@@ -819,6 +857,17 @@ const Blokus: React.FC = () => {
         <div style={{ width: isMobile ? "100%" : undefined, minWidth: isMobile ? 0 : 380, maxWidth: isMobile ? "100%" : 700 }}>
           <ScorePanel state={state} teamA={teamA} teamB={teamB} nameFor={nameFor} gameOver={gameOver} />
 
+          {gameOver && gameOverDismissed && (
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button onClick={() => setGameOverDismissed(false)} style={{ ...btn(), flex: 1 }}>
+                View results
+              </button>
+              <button onClick={handleRematch} style={{ ...btn("warn"), flex: 1 }}>
+                Play again
+              </button>
+            </div>
+          )}
+
           {message && (
             <div
               style={{
@@ -901,12 +950,6 @@ const Blokus: React.FC = () => {
                     Resign {COLOR_NAME[state.current]}
                   </button>
                 </div>
-              )}
-
-              {!isMyTurn && (
-                <button onClick={skipTurn} style={{ ...btn(), marginTop: 10 }}>
-                  Skip turn
-                </button>
               )}
 
               {orientation && isMyTurn && (
@@ -996,7 +1039,7 @@ const Blokus: React.FC = () => {
       </div>
 
       {/* Game-over modal */}
-      {gameOver && (
+      {gameOver && !gameOverDismissed && (
         <div
           style={{
             position: "fixed",
@@ -1020,8 +1063,27 @@ const Blokus: React.FC = () => {
               width: "100%",
               textAlign: "center",
               boxShadow: "0 0 80px rgba(236,72,153,0.3), 0 24px 64px rgba(0,0,0,0.7)",
+              position: "relative",
             }}
           >
+            <button
+              onClick={() => setGameOverDismissed(true)}
+              style={{
+                position: "absolute",
+                top: 12,
+                right: 14,
+                background: "transparent",
+                border: "none",
+                color: "#94a3b8",
+                fontSize: 22,
+                cursor: "pointer",
+                lineHeight: 1,
+                padding: 4,
+              }}
+              aria-label="Close"
+            >
+              ×
+            </button>
             <div style={{ fontSize: 56, marginBottom: 12 }}>
               {teamA < teamB ? "🏆" : teamB < teamA ? "🏆" : "🤝"}
             </div>
@@ -1074,7 +1136,7 @@ const Blokus: React.FC = () => {
             </div>
 
             <button
-              onClick={resetGame}
+              onClick={handleRematch}
               style={{
                 width: "100%",
                 padding: "14px 0",
