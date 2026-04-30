@@ -650,11 +650,12 @@ const Blokus: React.FC = () => {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  const isMobile = windowWidth < 700;
-  // Leave room for page padding (32px) and 1px gaps between cells (19px).
+  const isMobile = windowWidth < 600;
+  // On desktop: board takes ~58% of viewport width; right panel fills the rest.
+  // On mobile: board fills full width minus padding.
   const cellSize = isMobile
-    ? Math.max(14, Math.floor((windowWidth - 32 - 19) / BOARD_SIZE))
-    : 26;
+    ? Math.max(14, Math.floor((windowWidth - 32) / BOARD_SIZE))
+    : Math.min(36, Math.max(20, Math.floor((windowWidth * 0.58 - 32) / BOARD_SIZE)));
 
   const teamA = teamScore(state, "A");
   const teamB = teamScore(state, "B");
@@ -690,13 +691,15 @@ const Blokus: React.FC = () => {
         color: "#f8fafc",
         background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
         minHeight: "100vh",
+        boxSizing: "border-box",
       }}
     >
+      <div style={{ maxWidth: 1600, margin: "0 auto" }}>
       <h2 style={{ marginTop: 0 }}>Goodluck!</h2>
       <div
         style={{
           display: "flex",
-          gap: 16,
+          gap: 20,
           alignItems: "flex-start",
           flexDirection: isMobile ? "column" : "row",
         }}
@@ -986,6 +989,7 @@ const Blokus: React.FC = () => {
           )}
         </div>
       </div>
+      </div>
     </div>
   );
 };
@@ -1169,37 +1173,6 @@ const ShapePreview: React.FC<{
     </div>
   );
 };
-
-const RulesFooter: React.FC = () => (
-  <details style={{ marginTop: 24, maxWidth: 760 }}>
-    <summary style={{ cursor: "pointer", fontWeight: 600 }}>Rules</summary>
-    <ol style={{ lineHeight: 1.6 }}>
-      <li>
-        Four colors play in clockwise order: Blue → Yellow → Red → Green. Two
-        players share them — Player A controls Blue and Red (diagonally
-        opposite corners), Player B controls Yellow and Green.
-      </li>
-      <li>Each color's first piece must cover its starting corner.</li>
-      <li>
-        Every later piece of a color must touch at least one diagonal corner of
-        one of that same color's earlier pieces, and may never share a flat
-        edge with another piece of the same color. Edges may freely touch any
-        of the other three colors (including your own other color).
-      </li>
-      <li>Use Rotate / Flip to reorient the selected piece before placing.</li>
-      <li>
-        If a color has no legal moves, it sits out the rest of the game
-        automatically. The game ends when all four colors are out or finished.
-      </li>
-      <li>
-        Per-color score = -(squares of unplaced pieces). +15 for placing all 21
-        pieces, plus +5 if the very last piece placed by that color was the
-        single square (I1). A player's team score is the sum of their two
-        colors' scores.
-      </li>
-    </ol>
-  </details>
-);
 
 // -------------------- Style helpers --------------------
 
