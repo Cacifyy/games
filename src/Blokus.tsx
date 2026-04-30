@@ -301,15 +301,15 @@ function hasAnyLegalMove(
 
 // -------------------- Scoring --------------------
 
+// Score = squares remaining (lower is better). Bonuses subtract for placing all pieces.
 function colorScore(state: GameState, color: ColorId): number {
   let leftover = 0;
   for (const id of state.remaining[color]) leftover += shapeSize(PIECE_BY_ID[id].shape);
-  let s = -leftover;
   if (state.finished[color]) {
-    s += 15;
-    if (state.lastPlacedWasMonomino[color]) s += 5;
+    leftover -= 15;
+    if (state.lastPlacedWasMonomino[color]) leftover -= 5;
   }
-  return s;
+  return leftover;
 }
 
 function teamScore(state: GameState, player: PlayerId): number {
@@ -587,6 +587,21 @@ const Blokus: React.FC = () => {
     setMessage(`${COLOR_NAME[c]} resigned (no more moves this game).`);
   }
 
+  function skipTurn() {
+    if (gameOver || !isMyTurn) return;
+    const c = state.current;
+    const newState: GameState = {
+      ...state,
+      current: nextColor(state.current),
+      consecutivePasses: state.consecutivePasses + 1,
+    };
+    setState(newState);
+    socketRef.current?.sendMove(serializeState(newState));
+    setSelectedPieceId(null);
+    setOrientation(null);
+    setMessage(`${COLOR_NAME[c]} skipped their turn.`);
+  }
+
   function resetGame() {
     socketRef.current?.close();
     socketRef.current = null;
@@ -636,14 +651,13 @@ const Blokus: React.FC = () => {
   // Resolve display names: if networked, show actual names; otherwise generic labels.
   const nameFor = (player: PlayerId): string => {
     if (!myPlayerId) return player === "A" ? "Player A" : "Player B";
-    if (player === myPlayerId) return `${myName} (${player === "A" ? "Blue + Red" : "Yellow + Green"})`;
-    return `${opponentName} (${player === "A" ? "Blue + Red" : "Yellow + Green"})`;
+    return player === myPlayerId ? myName : opponentName;
   };
 
   let winnerText: string | null = null;
   if (gameOver) {
-    if (teamA > teamB) winnerText = `${nameFor("A")} wins! ${teamA} to ${teamB}.`;
-    else if (teamB > teamA) winnerText = `${nameFor("B")} wins! ${teamB} to ${teamA}.`;
+    if (teamA < teamB) winnerText = `${nameFor("A")} wins! ${teamA} to ${teamB}.`;
+    else if (teamB < teamA) winnerText = `${nameFor("B")} wins! ${teamB} to ${teamA}.`;
     else winnerText = `Tie! Both teams scored ${teamA}.`;
   }
 
@@ -863,18 +877,18 @@ const Blokus: React.FC = () => {
                   >
                     Deselect
                   </button>
+                  <button onClick={skipTurn} style={btn()}>
+                    Skip turn
+                  </button>
                   <button onClick={manualPass} style={btn("warn")}>
                     Resign {COLOR_NAME[state.current]}
-                  </button>
-                  <button onClick={resetGame} style={btn("ghost")}>
-                    Quit
                   </button>
                 </div>
               )}
 
               {!isMyTurn && (
-                <button onClick={resetGame} style={{ ...btn("ghost"), marginTop: 10 }}>
-                  Quit
+                <button onClick={skipTurn} style={{ ...btn(), marginTop: 10 }}>
+                  Skip turn
                 </button>
               )}
 
@@ -895,7 +909,7 @@ const Blokus: React.FC = () => {
           )}
 
           {!gameOver && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+            <div style={{ display: "flex", flexDirection: "row", gap: 8, marginTop: 12 }}>
               {(myPlayerId ? COLORS_FOR[myPlayerId] : [state.current]).map((color) => {
                 const isActive = isMyTurn && color === state.current;
                 const isNext = !isActive && color === nextUpColor;
@@ -903,39 +917,41 @@ const Blokus: React.FC = () => {
                   <div
                     key={color}
                     style={{
+                      flex: 1,
+                      minWidth: 0,
                       border: isActive
                         ? `2px solid ${COLOR_HEX[color]}`
                         : `1px solid rgba(255,255,255,0.1)`,
                       borderRadius: 8,
-                      padding: "10px 10px 8px",
+                      padding: "8px 8px 6px",
                       background: isActive ? `${COLOR_HEX[color]}11` : "rgba(255,255,255,0.02)",
                       boxShadow: isActive ? `0 0 20px ${COLOR_HEX[color]}33` : "none",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                       <span
                         style={{
-                          width: 10, height: 10, borderRadius: 2,
+                          width: 9, height: 9, borderRadius: 2,
                           background: COLOR_HEX[color], flexShrink: 0,
                         }}
                       />
-                      <strong style={{ fontSize: 13 }}>{COLOR_NAME[color]}</strong>
-                      <span style={{ fontSize: 11, color: "#64748b" }}>
+                      <strong style={{ fontSize: 12 }}>{COLOR_NAME[color]}</strong>
+                      <span style={{ fontSize: 10, color: "#64748b" }}>
                         {state.remaining[color].size} left
                       </span>
                       {isActive && (
                         <span style={{
-                          marginLeft: "auto", fontSize: 11, fontWeight: 700,
+                          marginLeft: "auto", fontSize: 10, fontWeight: 700,
                           background: COLOR_HEX[color], color: "#fff",
-                          padding: "2px 8px", borderRadius: 10,
+                          padding: "1px 6px", borderRadius: 10,
                         }}>
-                          Playing now
+                          Playing
                         </span>
                       )}
                       {isNext && (
                         <span style={{
-                          marginLeft: "auto", fontSize: 11,
-                          color: "#94a3b8", padding: "2px 8px", borderRadius: 10,
+                          marginLeft: "auto", fontSize: 10,
+                          color: "#94a3b8", padding: "1px 6px", borderRadius: 10,
                           border: "1px solid rgba(255,255,255,0.15)",
                         }}>
                           Up next
@@ -949,6 +965,7 @@ const Blokus: React.FC = () => {
                       onPick={isActive ? (id) => setSelectedPieceId(id) : () => {}}
                       disabled={!isActive}
                       hideTitle
+                      cellPx={7}
                     />
                   </div>
                 );
@@ -1015,6 +1032,8 @@ const ScorePanel: React.FC<{
   const teamBlock = (player: PlayerId, total: number) => (
     <div
       style={{
+        flex: 1,
+        minWidth: 0,
         padding: 8,
         border: "1px solid rgba(255,255,255,0.12)",
         borderRadius: 6,
@@ -1037,7 +1056,7 @@ const ScorePanel: React.FC<{
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <div style={{ display: "flex", flexDirection: "row", gap: 8 }}>
       {teamBlock("A", teamA)}
       {teamBlock("B", teamB)}
     </div>
@@ -1051,7 +1070,9 @@ const PieceTray: React.FC<{
   onPick: (id: string) => void;
   disabled: boolean;
   hideTitle?: boolean;
-}> = ({ color, remaining, selectedPieceId, onPick, disabled, hideTitle }) => {
+  cellPx?: number;
+}> = ({ color, remaining, selectedPieceId, onPick, disabled, hideTitle, cellPx = 9 }) => {
+  const minCell = 5 * cellPx + 14;
   return (
     <div style={{ marginTop: hideTitle ? 0 : 12 }}>
       {!hideTitle && (
@@ -1062,8 +1083,8 @@ const PieceTray: React.FC<{
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))",
-          gap: 6,
+          gridTemplateColumns: `repeat(auto-fill, minmax(${minCell}px, 1fr))`,
+          gap: 4,
         }}
       >
         {PIECES.map((p) => {
@@ -1075,7 +1096,7 @@ const PieceTray: React.FC<{
               disabled={disabled || !available}
               onClick={() => onPick(p.id)}
               style={{
-                padding: 4,
+                padding: 3,
                 border: selected
                   ? `2px solid ${COLOR_HEX[color]}`
                   : "1px solid rgba(255,255,255,0.12)",
@@ -1093,10 +1114,10 @@ const PieceTray: React.FC<{
               <ShapePreview
                 shape={p.shape}
                 color={COLOR_HEX[color]}
-                cellPx={9}
+                cellPx={cellPx}
                 muted={!available}
               />
-              <span style={{ fontSize: 10, color: "#94a3b8" }}>{p.id}</span>
+              <span style={{ fontSize: 9, color: "#94a3b8" }}>{p.id}</span>
             </button>
           );
         })}
