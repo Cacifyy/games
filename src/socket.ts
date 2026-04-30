@@ -25,7 +25,9 @@ export type ServerEvent =
   | { type: "state";               state: SerializedState }
   | { type: "opponent_disconnected" }
   | { type: "opponent_reconnected" }
-  | { type: "reconnecting" };      // emitted locally by the socket class
+  | { type: "reconnecting" }       // emitted locally by the socket class
+  | { type: "lobby_created";       code: string }
+  | { type: "lobby_not_found" };
 
 const SESSION_KEY = "blokus_token";
 const MAX_RETRIES = 20;   // 20 × 3s = 60s total retry window
@@ -44,6 +46,16 @@ export class BlokusSocket {
   connect(url: string, name: string, preferredSide: "A" | "B"): void {
     this.wsUrl = url;
     this._dial(() => this._send({ type: "join", name, preferredSide }));
+  }
+
+  createLobby(url: string, name: string, preferredSide: "A" | "B"): void {
+    this.wsUrl = url;
+    this._dial(() => this._send({ type: "create_lobby", name, preferredSide }));
+  }
+
+  joinLobby(url: string, name: string, code: string): void {
+    this.wsUrl = url;
+    this._dial(() => this._send({ type: "join_lobby", name, code }));
   }
 
   sendMove(state: SerializedState): void {

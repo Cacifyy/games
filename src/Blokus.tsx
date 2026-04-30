@@ -391,9 +391,14 @@ const Blokus: React.FC = () => {
   const [message, setMessage] = useState<string>("");
   const [gameOverDismissed, setGameOverDismissed] = useState(false);
   const [rematchWaiting, setRematchWaiting] = useState(false);
+  const [lobbyCode, setLobbyCode] = useState<string | null>(null);
+  const [lobbyError, setLobbyError] = useState<string | null>(null);
+  const [submitFeedback, setSubmitFeedback] = useState<"illegal" | null>(null);
 
   // Multiplayer state
   const socketRef = useRef<BlokusSocket | null>(null);
+  const boardGridRef = useRef<HTMLDivElement>(null);
+  const selectedPieceIdRef = useRef(selectedPieceId);
   const [myPlayerId, setMyPlayerId] = useState<PlayerId | null>(null);
   const [myName, setMyName] = useState("");
   const [opponentName, setOpponentName] = useState("");
@@ -518,6 +523,60 @@ const Blokus: React.FC = () => {
     socket.connect(wsUrl, name, preferredSide);
   }
 
+  function handleCreateLobby(name: string, preferredSide: "A" | "B") {
+    setMyName(name);
+    setLobbyStatus("waiting");
+    setLobbyCode(null);
+    setLobbyError(null);
+    const socket = new BlokusSocket();
+    socketRef.current = socket;
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = import.meta.env.VITE_WS_URL ?? `${proto}://${window.location.host}/ws`;
+    socket.onEvent = (event: ServerEvent) => {
+      if (event.type === "lobby_created") {
+        setLobbyCode(event.code);
+      } else if (event.type === "start") {
+        setMyPlayerId(event.playerId as PlayerId);
+        setOpponentName(event.opponentName);
+        setGameStarted(true);
+        setLobbyStatus("idle");
+        setLobbyCode(null);
+        setRematchWaiting(false);
+        setMessage("");
+      } else if (event.type === "opponent_disconnected") {
+        setMessage("Opponent disconnected.");
+      }
+    };
+    socket.createLobby(wsUrl, name, preferredSide);
+  }
+
+  function handleJoinLobby(name: string, code: string) {
+    setMyName(name);
+    setLobbyStatus("waiting");
+    setLobbyCode(null);
+    setLobbyError(null);
+    const socket = new BlokusSocket();
+    socketRef.current = socket;
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = import.meta.env.VITE_WS_URL ?? `${proto}://${window.location.host}/ws`;
+    socket.onEvent = (event: ServerEvent) => {
+      if (event.type === "start") {
+        setMyPlayerId(event.playerId as PlayerId);
+        setOpponentName(event.opponentName);
+        setGameStarted(true);
+        setLobbyStatus("idle");
+        setRematchWaiting(false);
+        setMessage("");
+      } else if (event.type === "lobby_not_found") {
+        setLobbyError("Game code not found. Check the code and try again.");
+        setLobbyStatus("idle");
+      } else if (event.type === "opponent_disconnected") {
+        setMessage("Opponent disconnected.");
+      }
+    };
+    socket.joinLobby(wsUrl, name, code);
+  }
+
   function rotateSelected() {
     if (!orientation) return;
     setOrientation(rotateCW(orientation));
@@ -633,6 +692,8 @@ const Blokus: React.FC = () => {
     setGameStarted(false);
     setGameOverDismissed(false);
     setRematchWaiting(false);
+    setLobbyCode(null);
+    setLobbyError(null);
   }
 
   function handleRematch() {
@@ -650,6 +711,8 @@ const Blokus: React.FC = () => {
     setOpponentName("");
     setGameStarted(false);
     setRematchWaiting(true);
+    setLobbyCode(null);
+    setLobbyError(null);
     handleFindGame(name, nextSide);
   }
 
@@ -687,6 +750,44 @@ const Blokus: React.FC = () => {
   }, []);
 
   const isMobile = windowWidth < 600;
+
+  // Keep ref fresh so touch handlers don't capture stale selectedPieceId.
+  selectedPieceIdRef.current = selectedPieceId;
+
+  // Non-passive touch listeners so we can preventDefault (stops page scroll while dragging a piece).
+  useEffect(() => {
+    if (!isMobile) return;
+    const el = boardGridRef.current;
+    if (!el) return;
+
+    const getCell = (touch: Touch) => {
+      const rect = el.getBoundingClientRect();
+      let relX = touch.clientX - rect.left;
+      let relY = touch.clientY - rect.top;
+      if (myPlayerId === "B") {
+        relX = rect.width - relX;
+        relY = rect.height - relY;
+      }
+      const cellPluGap = rect.width / BOARD_SIZE;
+      return {
+        r: Math.max(0, Math.min(BOARD_SIZE - 1, Math.floor(relY / cellPluGap))),
+        c: Math.max(0, Math.min(BOARD_SIZE - 1, Math.floor(relX / cellPluGap))),
+      };
+    };
+
+    const handler = (e: TouchEvent) => {
+      if (!selectedPieceIdRef.current) return;
+      e.preventDefault();
+      setHover(getCell(e.touches[0]));
+    };
+
+    el.addEventListener("touchstart", handler, { passive: false });
+    el.addEventListener("touchmove", handler, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", handler);
+      el.removeEventListener("touchmove", handler);
+    };
+  }, [isMobile, myPlayerId]);
   // Board occupies ~46% of viewport on desktop; panel gets the rest (up to 700px).
   // Mobile: fill available width (outer padding 48px + board card padding 8px + 19 gaps = 75px overhead).
   // Desktop: board takes ~46% of viewport.
@@ -738,6 +839,11 @@ const Blokus: React.FC = () => {
       <LobbyPage
         status={lobbyStatus}
         onFindGame={handleFindGame}
+        onCreateLobby={handleCreateLobby}
+        onJoinLobby={handleJoinLobby}
+        lobbyCode={lobbyCode}
+        lobbyError={lobbyError}
+        onClearError={() => setLobbyError(null)}
       />
     );
   }
@@ -775,6 +881,7 @@ const Blokus: React.FC = () => {
             }}
           >
             <div
+              ref={boardGridRef}
               style={{
                 display: "grid",
                 gridTemplateColumns: `repeat(${BOARD_SIZE}, ${cellSize}px)`,
@@ -815,7 +922,7 @@ const Blokus: React.FC = () => {
                     <div
                       key={`${r}-${c}`}
                       onMouseEnter={() => setHover({ r, c })}
-                      onClick={() => tryPlaceAt(r, c)}
+                      onClick={isMobile ? undefined : () => tryPlaceAt(r, c)}
                       style={{
                         width: cellSize,
                         height: cellSize,
@@ -952,7 +1059,57 @@ const Blokus: React.FC = () => {
                 </div>
               )}
 
-              {orientation && isMyTurn && (
+              {orientation && isMyTurn && isMobile && (
+                <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                    Drag on the board to position, then tap Place:
+                  </div>
+                  {submitFeedback === "illegal" && (
+                    <div style={{
+                      padding: "8px 12px",
+                      background: "rgba(220,38,38,0.2)",
+                      border: "1px solid #dc2626",
+                      borderRadius: 6,
+                      color: "#fca5a5",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      textAlign: "center",
+                    }}>
+                      That's illegal!
+                    </div>
+                  )}
+                  <button
+                    disabled={!hover}
+                    onClick={() => {
+                      if (!hover || !orientation) return;
+                      const color = state.current;
+                      const v = validatePlacement(state.board, color, orientation, hover.r, hover.c, isFirstMoveFor[color]);
+                      if (v.ok) {
+                        tryPlaceAt(hover.r, hover.c);
+                        setSubmitFeedback(null);
+                      } else {
+                        setSubmitFeedback("illegal");
+                        setTimeout(() => setSubmitFeedback(null), 2000);
+                      }
+                    }}
+                    style={{
+                      padding: "12px 0",
+                      fontSize: 15,
+                      fontWeight: 700,
+                      borderRadius: 8,
+                      border: "none",
+                      background: hover ? `linear-gradient(135deg, ${COLOR_HEX[state.current]}, ${COLOR_HEX[state.current]}99)` : "rgba(255,255,255,0.08)",
+                      color: hover ? "#fff" : "#475569",
+                      cursor: hover ? "pointer" : "not-allowed",
+                      boxShadow: hover ? `0 0 20px ${COLOR_HEX[state.current]}55` : "none",
+                    }}
+                  >
+                    Place Piece
+                  </button>
+                </div>
+              )}
+
+              {orientation && isMyTurn && !isMobile && (
                 <div style={{ marginTop: 10 }}>
                   <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 4 }}>
                     Click a board cell to place — that cell becomes the piece's
@@ -1395,16 +1552,25 @@ const CARD_STYLE: React.CSSProperties = {
 const LobbyPage: React.FC<{
   status: "idle" | "waiting";
   onFindGame: (name: string, preferredSide: "A" | "B") => void;
-}> = ({ status, onFindGame }) => {
+  onCreateLobby: (name: string, preferredSide: "A" | "B") => void;
+  onJoinLobby: (name: string, code: string) => void;
+  lobbyCode: string | null;
+  lobbyError: string | null;
+  onClearError: () => void;
+}> = ({ status, onFindGame, onCreateLobby, onJoinLobby, lobbyCode, lobbyError, onClearError }) => {
   const [step, setStep] = useState<"name" | "team">("name");
   const [name, setName] = useState("");
   const [side, setSide] = useState<"A" | "B" | null>(null);
+  const [joinMode, setJoinMode] = useState(false);
+  const [codeInput, setCodeInput] = useState("");
 
   const advanceToTeam = () => {
     if (name.trim().length > 0) setStep("team");
   };
 
   const canFind = side !== null && status === "idle";
+  const canCreate = side !== null && status === "idle";
+  const canJoin = codeInput.trim().length === 6 && status === "idle";
 
   // ---------- Step 1: name ----------
   if (step === "name") {
@@ -1412,10 +1578,10 @@ const LobbyPage: React.FC<{
       <div style={LOBBY_BG}>
         <div style={{ textAlign: "center" }}>
           <h1 style={{ margin: 0, fontSize: 48, letterSpacing: 4, fontWeight: 800 }}>
-            BLOKUS BESTIES
+            BLOCK-IT BESTIES
           </h1>
           <p style={{ margin: "8px 0 0", color: "#94a3b8", fontSize: 15 }}>
-            4 colors · classic rules
+            4 colours · classic rules
           </p>
         </div>
 
@@ -1543,10 +1709,10 @@ const LobbyPage: React.FC<{
     <div style={LOBBY_BG}>
       <div style={{ textAlign: "center" }}>
         <h1 style={{ margin: 0, fontSize: 48, letterSpacing: 4, fontWeight: 800 }}>
-          BLOKUS BESTIES
+          BLOCK-IT BESTIES
         </h1>
         <p style={{ margin: "8px 0 0", color: "#94a3b8", fontSize: 15 }}>
-          Hi <strong style={{ color: "#f8fafc" }}>{name}</strong>! Pick your side.
+          Welcome, <strong style={{ color: "#f8fafc" }}>{name}</strong>! Pick your side.
         </p>
       </div>
 
@@ -1557,50 +1723,94 @@ const LobbyPage: React.FC<{
           {teamCard("B", [2, 4], "Team B", "linear-gradient(135deg, #a1620088, #15803d88)")}
         </div>
 
-        {status === "waiting" && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "10px 14px",
-              borderRadius: 8,
-              background: "rgba(236,72,153,0.15)",
-              border: "1px solid rgba(236,72,153,0.4)",
-              fontSize: 14,
-              color: "#f9a8d4",
-            }}
-          >
+        {/* Status banners */}
+        {status === "waiting" && !lobbyCode && !joinMode && (
+          <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:8, background:"rgba(236,72,153,0.15)", border:"1px solid rgba(236,72,153,0.4)", fontSize:14, color:"#f9a8d4" }}>
             <Spinner />
             Waiting for an opponent…
           </div>
         )}
+        {lobbyCode && (
+          <div style={{ display:"flex", flexDirection:"column", gap:8, padding:"12px 14px", borderRadius:8, background:"rgba(22,163,74,0.15)", border:"1px solid rgba(22,163,74,0.4)" }}>
+            <div style={{ fontSize:12, color:"#86efac" }}>Share this code with your friend:</div>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontFamily:"monospace", fontSize:28, fontWeight:800, letterSpacing:6, color:"#f8fafc" }}>{lobbyCode}</span>
+              <button onClick={() => navigator.clipboard.writeText(lobbyCode)} style={{ ...btn(), fontSize:12, padding:"4px 10px" }}>Copy</button>
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, color:"#86efac" }}>
+              <Spinner />
+              Waiting for them to join…
+            </div>
+          </div>
+        )}
+        {lobbyError && (
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 14px", borderRadius:8, background:"rgba(220,38,38,0.15)", border:"1px solid rgba(220,38,38,0.4)", fontSize:13, color:"#fca5a5" }}>
+            {lobbyError}
+            <button onClick={onClearError} style={{ background:"transparent", border:"none", color:"#fca5a5", cursor:"pointer", fontSize:16, lineHeight:1, padding:"0 4px" }}>×</button>
+          </div>
+        )}
 
+        {/* Find Game */}
         <button
           disabled={!canFind}
-          onClick={() => side && onFindGame(name.trim(), side)}
-          style={{
-            padding: "14px 0",
-            fontSize: 16,
-            fontWeight: 700,
-            borderRadius: 10,
-            border: "none",
-            background: canFind
-              ? "linear-gradient(135deg, #ec4899, #be185d)"
-              : "rgba(255,255,255,0.08)",
-            color: canFind ? "#fff" : "#475569",
-            cursor: canFind ? "pointer" : "not-allowed",
-            boxShadow: canFind ? "0 0 32px rgba(236,72,153,0.5)" : "none",
-            letterSpacing: 1,
-          }}
+          onClick={() => { onClearError(); side && onFindGame(name.trim(), side); }}
+          style={{ padding:"14px 0", fontSize:16, fontWeight:700, borderRadius:10, border:"none", background: canFind ? "linear-gradient(135deg, #ec4899, #be185d)" : "rgba(255,255,255,0.08)", color: canFind ? "#fff" : "#475569", cursor: canFind ? "pointer" : "not-allowed", boxShadow: canFind ? "0 0 32px rgba(236,72,153,0.5)" : "none", letterSpacing:1 }}
         >
           Find Game
         </button>
 
-        <button
-          onClick={() => setStep("name")}
-          style={{ ...btn("ghost"), alignSelf: "center", fontSize: 13 }}
-        >
+        {/* Divider */}
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.1)" }} />
+          <span style={{ fontSize:12, color:"#475569" }}>or</span>
+          <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.1)" }} />
+        </div>
+
+        {/* Private lobby buttons */}
+        {!joinMode ? (
+          <div style={{ display:"flex", gap:10 }}>
+            <button
+              disabled={!canCreate}
+              onClick={() => { onClearError(); side && onCreateLobby(name.trim(), side); }}
+              style={{ flex:1, padding:"11px 0", fontSize:14, fontWeight:600, borderRadius:8, border:"1px solid rgba(255,255,255,0.2)", background: canCreate ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)", color: canCreate ? "#f8fafc" : "#475569", cursor: canCreate ? "pointer" : "not-allowed" }}
+            >
+              Create Private Game
+            </button>
+            <button
+              disabled={status === "waiting"}
+              onClick={() => { onClearError(); setJoinMode(true); }}
+              style={{ flex:1, padding:"11px 0", fontSize:14, fontWeight:600, borderRadius:8, border:"1px solid rgba(255,255,255,0.2)", background:"rgba(255,255,255,0.08)", color:"#f8fafc", cursor: status === "waiting" ? "not-allowed" : "pointer" }}
+            >
+              Join with Code
+            </button>
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            <input
+              autoFocus
+              type="text"
+              value={codeInput}
+              onChange={(e) => { onClearError(); setCodeInput(e.target.value.toUpperCase().slice(0, 6)); }}
+              onKeyDown={(e) => e.key === "Enter" && canJoin && onJoinLobby(name.trim(), codeInput)}
+              placeholder="Enter 6-character code…"
+              style={{ padding:"10px 14px", borderRadius:8, border:"1px solid rgba(255,255,255,0.2)", background:"rgba(255,255,255,0.08)", color:"#f8fafc", fontSize:16, outline:"none", fontFamily:"monospace", letterSpacing:4, textTransform:"uppercase" }}
+            />
+            <div style={{ display:"flex", gap:8 }}>
+              <button
+                disabled={!canJoin}
+                onClick={() => onJoinLobby(name.trim(), codeInput)}
+                style={{ flex:1, padding:"11px 0", fontSize:14, fontWeight:600, borderRadius:8, border:"none", background: canJoin ? "linear-gradient(135deg, #ec4899, #be185d)" : "rgba(255,255,255,0.08)", color: canJoin ? "#fff" : "#475569", cursor: canJoin ? "pointer" : "not-allowed" }}
+              >
+                Join Game
+              </button>
+              <button onClick={() => { setJoinMode(false); setCodeInput(""); onClearError(); }} style={{ ...btn("ghost"), padding:"11px 14px" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        <button onClick={() => setStep("name")} style={{ ...btn("ghost"), alignSelf:"center", fontSize:13 }}>
           ← Back
         </button>
       </div>
