@@ -394,6 +394,8 @@ const Blokus: React.FC = () => {
   const [lobbyCode, setLobbyCode] = useState<string | null>(null);
   const [lobbyError, setLobbyError] = useState<string | null>(null);
   const [submitFeedback, setSubmitFeedback] = useState<"illegal" | null>(null);
+  const [disconnectCountdown, setDisconnectCountdown] = useState<number | null>(null);
+  const [opponentAbandoned, setOpponentAbandoned] = useState(false);
 
   // Multiplayer state
   const socketRef = useRef<BlokusSocket | null>(null);
@@ -408,6 +410,19 @@ const Blokus: React.FC = () => {
   useEffect(() => {
     return () => { socketRef.current?.close(); };
   }, []);
+
+  // Countdown tick when opponent disconnects.
+  useEffect(() => {
+    if (disconnectCountdown === null) return;
+    if (disconnectCountdown <= 0) {
+      setDisconnectCountdown(null);
+      setOpponentAbandoned(true);
+      setGameOverDismissed(false);
+      return;
+    }
+    const t = setTimeout(() => setDisconnectCountdown((d) => (d !== null ? d - 1 : null)), 1000);
+    return () => clearTimeout(t);
+  }, [disconnectCountdown]);
 
   const isFirstMoveFor: Record<ColorId, boolean> = {
     1: !state.history.some((h) => h.color === 1),
@@ -509,9 +524,10 @@ const Blokus: React.FC = () => {
       } else if (event.type === "reconnecting") {
         setMessage("Connection lost — reconnecting…");
       } else if (event.type === "opponent_reconnected") {
+        setDisconnectCountdown(null);
         setMessage("Opponent reconnected!");
       } else if (event.type === "opponent_disconnected") {
-        setMessage("Opponent disconnected.");
+        setDisconnectCountdown(60);
       }
     };
 
@@ -546,7 +562,7 @@ const Blokus: React.FC = () => {
       } else if (event.type === "state") {
         setState(deserializeState(event.state));
       } else if (event.type === "opponent_disconnected") {
-        setMessage("Opponent disconnected.");
+        setDisconnectCountdown(60);
       }
     };
     socket.createLobby(wsUrl, name, preferredSide);
@@ -575,7 +591,7 @@ const Blokus: React.FC = () => {
       } else if (event.type === "state") {
         setState(deserializeState(event.state));
       } else if (event.type === "opponent_disconnected") {
-        setMessage("Opponent disconnected.");
+        setDisconnectCountdown(60);
       }
     };
     socket.joinLobby(wsUrl, name, code);
@@ -698,6 +714,8 @@ const Blokus: React.FC = () => {
     setRematchWaiting(false);
     setLobbyCode(null);
     setLobbyError(null);
+    setDisconnectCountdown(null);
+    setOpponentAbandoned(false);
   }
 
   function handleRematch() {
@@ -717,6 +735,8 @@ const Blokus: React.FC = () => {
     setRematchWaiting(true);
     setLobbyCode(null);
     setLobbyError(null);
+    setDisconnectCountdown(null);
+    setOpponentAbandoned(false);
     handleFindGame(name, nextSide);
   }
 
@@ -818,7 +838,9 @@ const Blokus: React.FC = () => {
   };
 
   let winnerText: string | null = null;
-  if (gameOver) {
+  if (opponentAbandoned) {
+    winnerText = `${opponentName || "Opponent"} left the game.`;
+  } else if (gameOver) {
     if (teamA < teamB) winnerText = `${nameFor("A")} wins! ${teamA} to ${teamB}.`;
     else if (teamB < teamA) winnerText = `${nameFor("B")} wins! ${teamB} to ${teamA}.`;
     else winnerText = `Tie! Both teams scored ${teamA}.`;
@@ -990,19 +1012,12 @@ const Blokus: React.FC = () => {
             </div>
           )}
 
-          {message && (
-            <div
-              style={{
-                marginTop: 8,
-                padding: "6px 10px",
-                background: "#fef3c7",
-                border: "1px solid #fde68a",
-                borderRadius: 4,
-                color: "#78350f",
-                fontSize: 13,
-              }}
-            >
-              {message}
+          {message && <GameMessage message={message} />}
+
+          {disconnectCountdown !== null && (
+            <div style={{ marginTop: 8, padding: "10px 14px", background: "rgba(245,158,11,0.15)", border: "1px solid #f59e0b", borderRadius: 8, color: "#fde68a", fontSize: 13, fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>Opponent disconnected</span>
+              <span style={{ fontVariantNumeric: "tabular-nums", fontSize: 15, fontWeight: 800 }}>{disconnectCountdown}s</span>
             </div>
           )}
 
@@ -1211,7 +1226,7 @@ const Blokus: React.FC = () => {
       </div>
 
       {/* Game-over modal */}
-      {gameOver && !gameOverDismissed && (
+      {(gameOver || opponentAbandoned) && !gameOverDismissed && (
         <div
           style={{
             position: "fixed",
@@ -1257,10 +1272,10 @@ const Blokus: React.FC = () => {
               ×
             </button>
             <div style={{ fontSize: 56, marginBottom: 12 }}>
-              {teamA < teamB ? "🏆" : teamB < teamA ? "🏆" : "🤝"}
+              {opponentAbandoned ? "🚪" : teamA < teamB ? "🏆" : teamB < teamA ? "🏆" : "🤝"}
             </div>
             <h2 style={{ margin: "0 0 8px", fontSize: 28, fontWeight: 800, letterSpacing: 1 }}>
-              Game Over
+              {opponentAbandoned ? "Opponent Left" : "Game Over"}
             </h2>
             <p style={{ margin: "0 0 28px", color: "#f9a8d4", fontSize: 16 }}>
               {winnerText}
@@ -1333,6 +1348,37 @@ const Blokus: React.FC = () => {
 };
 
 // -------------------- Subcomponents --------------------
+
+const GameMessage: React.FC<{ message: string }> = ({ message }) => {
+  const isError = /illegal|cannot|must|off the board|overlaps/i.test(message);
+  const isSuccess = /reconnected/i.test(message);
+  const isWarning = /disconnected|reconnecting|resigned|no legal moves|skipped/i.test(message);
+
+  const colors = isError
+    ? { bg: "rgba(220,38,38,0.15)", border: "#dc2626", text: "#fca5a5" }
+    : isSuccess
+    ? { bg: "rgba(22,163,74,0.15)", border: "#16a34a", text: "#86efac" }
+    : isWarning
+    ? { bg: "rgba(245,158,11,0.15)", border: "#f59e0b", text: "#fde68a" }
+    : { bg: "rgba(99,102,241,0.15)", border: "#6366f1", text: "#c7d2fe" };
+
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        padding: "10px 14px",
+        background: colors.bg,
+        border: `1px solid ${colors.border}`,
+        borderRadius: 8,
+        color: colors.text,
+        fontSize: 13,
+        fontWeight: 600,
+      }}
+    >
+      {message}
+    </div>
+  );
+};
 
 const ScorePanel: React.FC<{
   state: GameState;
