@@ -896,7 +896,12 @@ const Blokus: React.FC = () => {
               }}
               onMouseLeave={() => setHover(null)}
             >
-              {Array.from({ length: BOARD_SIZE }).map((_, r) =>
+              {(() => {
+                const lastMove = state.history.length > 0 ? state.history[state.history.length - 1] : null;
+                const lastMoveCellSet = lastMove
+                  ? new Set(lastMove.cells.map(([r, c]) => `${r}-${c}`))
+                  : new Set<string>();
+                return Array.from({ length: BOARD_SIZE }).map((_, r) =>
                 Array.from({ length: BOARD_SIZE }).map((_, c) => {
                   const cell = state.board[r][c];
                   const startColor = (Object.keys(START_SQUARES) as unknown as ColorId[])
@@ -908,6 +913,7 @@ const Blokus: React.FC = () => {
 
                   let bg = cell ? COLOR_HEX[cell] : "#ffffff";
                   let outline = "none";
+                  let boxShadow: string | undefined;
                   if (preview) {
                     const inPreview = preview.cells.some(
                       ([pr, pc]) => pr === r && pc === c
@@ -920,6 +926,8 @@ const Blokus: React.FC = () => {
                         ? `2px solid ${COLOR_HEX[preview.color]}`
                         : "2px solid #dc2626";
                     }
+                  } else if (lastMove && lastMoveCellSet.has(`${r}-${c}`)) {
+                    boxShadow = `inset 0 0 0 2px white, inset 0 0 0 3px ${COLOR_HEX[lastMove.color]}, 0 0 6px 2px ${COLOR_HEX[lastMove.color]}`;
                   }
 
                   return (
@@ -933,8 +941,10 @@ const Blokus: React.FC = () => {
                         background: bg,
                         outline,
                         outlineOffset: -2,
+                        boxShadow,
                         cursor: selectedPieceId && isMyTurn ? "pointer" : "default",
                         position: "relative",
+                        zIndex: boxShadow ? 1 : undefined,
                       }}
                     >
                       {startColor && cell === 0 && (
@@ -957,7 +967,8 @@ const Blokus: React.FC = () => {
                     </div>
                   );
                 })
-              )}
+              );
+              })()}
             </div>
           </div>
 
@@ -1562,152 +1573,16 @@ const LobbyPage: React.FC<{
   lobbyError: string | null;
   onClearError: () => void;
 }> = ({ status, onFindGame, onCreateLobby, onJoinLobby, lobbyCode, lobbyError, onClearError }) => {
-  const [step, setStep] = useState<"name" | "team">("name");
   const [name, setName] = useState("");
-  const [side, setSide] = useState<"A" | "B" | null>(null);
   const [joinMode, setJoinMode] = useState(false);
   const [codeInput, setCodeInput] = useState("");
 
-  const advanceToTeam = () => {
-    if (name.trim().length > 0) setStep("team");
-  };
-
-  const canFind = side !== null && status === "idle";
-  const canCreate = side !== null && status === "idle";
+  const hasName = name.trim().length > 0;
+  const canPlay = hasName && status === "idle";
+  const canCreate = hasName && status === "idle";
   const canJoin = codeInput.trim().length === 6 && status === "idle";
 
-  // ---------- Step 1: name ----------
-  if (step === "name") {
-    return (
-      <div style={LOBBY_BG}>
-        <div style={{ textAlign: "center" }}>
-          <h1 style={{ margin: 0, fontSize: 48, letterSpacing: 4, fontWeight: 800 }}>
-            BLOCK-IT BESTIES
-          </h1>
-          <p style={{ margin: "8px 0 0", color: "#94a3b8", fontSize: 15 }}>
-            4 colours · classic rules
-          </p>
-        </div>
-
-        <div style={CARD_STYLE}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <label style={{ fontSize: 13, color: "#94a3b8" }}>Your name</label>
-            <input
-              autoFocus
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && name.trim().length > 0 && advanceToTeam()}
-              placeholder="Enter your name…"
-              maxLength={24}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 8,
-                border: "1px solid rgba(255,255,255,0.2)",
-                background: "rgba(255,255,255,0.08)",
-                color: "#f8fafc",
-                fontSize: 16,
-                outline: "none",
-              }}
-            />
-          </div>
-
-          <button
-            disabled={name.trim().length === 0}
-            onClick={advanceToTeam}
-            style={{
-              padding: "14px 0",
-              fontSize: 16,
-              fontWeight: 700,
-              borderRadius: 10,
-              border: "none",
-              background:
-                name.trim().length > 0
-                  ? "linear-gradient(135deg, #ec4899, #be185d)"
-                  : "rgba(255,255,255,0.08)",
-              color: name.trim().length > 0 ? "#fff" : "#475569",
-              cursor: name.trim().length > 0 ? "pointer" : "not-allowed",
-              boxShadow:
-                name.trim().length > 0 ? "0 0 32px rgba(236,72,153,0.5)" : "none",
-              letterSpacing: 1,
-            }}
-          >
-            Continue →
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ---------- Step 2: team select ----------
-  const teamCard = (
-    player: "A" | "B",
-    colors: ColorId[],
-    label: string,
-    gradient: string
-  ) => {
-    const selected = side === player;
-    return (
-      <button
-        key={player}
-        onClick={() => setSide(player)}
-        style={{
-          flex: 1,
-          padding: "24px 16px",
-          borderRadius: 12,
-          border: selected
-            ? `2px solid transparent`
-            : "2px solid rgba(255,255,255,0.12)",
-          background: selected
-            ? gradient
-            : "rgba(255,255,255,0.05)",
-          backgroundClip: selected ? undefined : undefined,
-          cursor: "pointer",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 12,
-          boxShadow: selected ? "0 0 28px rgba(236,72,153,0.35)" : "none",
-          transition: "all 0.15s ease",
-          outline: "none",
-          position: "relative",
-        }}
-      >
-        {selected && (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              borderRadius: 10,
-              border: "2px solid rgba(255,255,255,0.5)",
-              pointerEvents: "none",
-            }}
-          />
-        )}
-        {/* Color swatches */}
-        <div style={{ display: "flex", gap: 8 }}>
-          {colors.map((c) => (
-            <div
-              key={c}
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 6,
-                background: COLOR_HEX[c],
-                boxShadow: `0 2px 8px ${COLOR_HEX[c]}88`,
-              }}
-            />
-          ))}
-        </div>
-        <div style={{ fontWeight: 700, fontSize: 15, color: "#f8fafc" }}>
-          {label}
-        </div>
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>
-          {colors.map((c) => COLOR_NAME[c]).join(" + ")}
-        </div>
-      </button>
-    );
-  };
+  const randomSide = (): "A" | "B" => (Math.random() > 0.5 ? "A" : "B");
 
   return (
     <div style={LOBBY_BG}>
@@ -1716,22 +1591,39 @@ const LobbyPage: React.FC<{
           BLOCK-IT BESTIES
         </h1>
         <p style={{ margin: "8px 0 0", color: "#94a3b8", fontSize: 15 }}>
-          Welcome, <strong style={{ color: "#f8fafc" }}>{name}</strong>! Pick your side.
+          4 colours · classic rules
         </p>
       </div>
 
-      <div style={{ ...CARD_STYLE, maxWidth: 520 }}>
-        {/* Team cards */}
-        <div style={{ display: "flex", gap: 16 }}>
-          {teamCard("A", [1, 3], "Team A", "linear-gradient(135deg, #1d4ed888, #dc262688)")}
-          {teamCard("B", [2, 4], "Team B", "linear-gradient(135deg, #a1620088, #15803d88)")}
+      <div style={CARD_STYLE}>
+        {/* Name input */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <label style={{ fontSize: 13, color: "#94a3b8" }}>Your name</label>
+          <input
+            autoFocus
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && canPlay && onFindGame(name.trim(), randomSide())}
+            placeholder="Enter your name…"
+            maxLength={24}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.2)",
+              background: "rgba(255,255,255,0.08)",
+              color: "#f8fafc",
+              fontSize: 16,
+              outline: "none",
+            }}
+          />
         </div>
 
         {/* Status banners */}
-        {status === "waiting" && !lobbyCode && !joinMode && (
+        {status === "waiting" && !lobbyCode && (
           <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:8, background:"rgba(236,72,153,0.15)", border:"1px solid rgba(236,72,153,0.4)", fontSize:14, color:"#f9a8d4" }}>
             <Spinner />
-            Waiting for an opponent…
+            Finding a match…
           </div>
         )}
         {lobbyCode && (
@@ -1754,13 +1646,13 @@ const LobbyPage: React.FC<{
           </div>
         )}
 
-        {/* Find Game */}
+        {/* Play Classic */}
         <button
-          disabled={!canFind}
-          onClick={() => { onClearError(); side && onFindGame(name.trim(), side); }}
-          style={{ padding:"14px 0", fontSize:16, fontWeight:700, borderRadius:10, border:"none", background: canFind ? "linear-gradient(135deg, #ec4899, #be185d)" : "rgba(255,255,255,0.08)", color: canFind ? "#fff" : "#475569", cursor: canFind ? "pointer" : "not-allowed", boxShadow: canFind ? "0 0 32px rgba(236,72,153,0.5)" : "none", letterSpacing:1 }}
+          disabled={!canPlay}
+          onClick={() => { onClearError(); onFindGame(name.trim(), randomSide()); }}
+          style={{ padding:"14px 0", fontSize:16, fontWeight:700, borderRadius:10, border:"none", background: canPlay ? "linear-gradient(135deg, #ec4899, #be185d)" : "rgba(255,255,255,0.08)", color: canPlay ? "#fff" : "#475569", cursor: canPlay ? "pointer" : "not-allowed", boxShadow: canPlay ? "0 0 32px rgba(236,72,153,0.5)" : "none", letterSpacing:1 }}
         >
-          Find Game
+          Play Classic
         </button>
 
         {/* Divider */}
@@ -1775,15 +1667,15 @@ const LobbyPage: React.FC<{
           <div style={{ display:"flex", gap:10 }}>
             <button
               disabled={!canCreate}
-              onClick={() => { onClearError(); side && onCreateLobby(name.trim(), side); }}
+              onClick={() => { onClearError(); onCreateLobby(name.trim(), randomSide()); }}
               style={{ flex:1, padding:"11px 0", fontSize:14, fontWeight:600, borderRadius:8, border:"1px solid rgba(255,255,255,0.2)", background: canCreate ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)", color: canCreate ? "#f8fafc" : "#475569", cursor: canCreate ? "pointer" : "not-allowed" }}
             >
               Create Private Game
             </button>
             <button
-              disabled={status === "waiting"}
+              disabled={!hasName || status === "waiting"}
               onClick={() => { onClearError(); setJoinMode(true); }}
-              style={{ flex:1, padding:"11px 0", fontSize:14, fontWeight:600, borderRadius:8, border:"1px solid rgba(255,255,255,0.2)", background:"rgba(255,255,255,0.08)", color:"#f8fafc", cursor: status === "waiting" ? "not-allowed" : "pointer" }}
+              style={{ flex:1, padding:"11px 0", fontSize:14, fontWeight:600, borderRadius:8, border:"1px solid rgba(255,255,255,0.2)", background: hasName ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)", color: hasName ? "#f8fafc" : "#475569", cursor: (hasName && status === "idle") ? "pointer" : "not-allowed" }}
             >
               Join with Code
             </button>
@@ -1813,10 +1705,6 @@ const LobbyPage: React.FC<{
             </div>
           </div>
         )}
-
-        <button onClick={() => setStep("name")} style={{ ...btn("ghost"), alignSelf:"center", fontSize:13 }}>
-          ← Back
-        </button>
       </div>
     </div>
   );
