@@ -25,6 +25,7 @@ export type ServerEvent =
   | { type: "state";               state: SerializedState }
   | { type: "opponent_disconnected" }
   | { type: "opponent_reconnected" }
+  | { type: "game_abandoned" }
   | { type: "reconnecting" }       // emitted locally by the socket class
   | { type: "lobby_created";       code: string }
   | { type: "lobby_not_found" };

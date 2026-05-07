@@ -217,10 +217,13 @@ wss.on("connection", (ws) => {
 
     slot.ws = null;
 
-    // Start grace period — notify partner only if player doesn't come back.
+    // Immediately tell partner their opponent dropped.
+    send(partnerSlot.ws, { type: "opponent_disconnected" });
+
+    // After grace period, end the game if they haven't come back.
     slot.disconnectTimer = setTimeout(() => {
       slot.disconnectTimer = null;
-      send(partnerSlot.ws, { type: "opponent_disconnected" });
+      send(partnerSlot.ws, { type: "game_abandoned" });
       sessions.delete(slot.token);
       sessions.delete(partnerSlot.token);
       console.log(`Game ${game.id} ended — ${slot.name} did not reconnect in time`);

@@ -424,6 +424,13 @@ const Blokus: React.FC = () => {
     return () => clearTimeout(t);
   }, [disconnectCountdown]);
 
+  // Auto-clear transient success/info messages after 5s.
+  useEffect(() => {
+    if (!message) return;
+    const t = setTimeout(() => setMessage(""), 5000);
+    return () => clearTimeout(t);
+  }, [message]);
+
   const isFirstMoveFor: Record<ColorId, boolean> = {
     1: !state.history.some((h) => h.color === 1),
     2: !state.history.some((h) => h.color === 2),
@@ -528,6 +535,10 @@ const Blokus: React.FC = () => {
         setMessage("Opponent reconnected!");
       } else if (event.type === "opponent_disconnected") {
         setDisconnectCountdown(60);
+      } else if (event.type === "game_abandoned") {
+        setDisconnectCountdown(null);
+        setOpponentAbandoned(true);
+        setGameOverDismissed(false);
       }
     };
 
@@ -563,6 +574,10 @@ const Blokus: React.FC = () => {
         setState(deserializeState(event.state));
       } else if (event.type === "opponent_disconnected") {
         setDisconnectCountdown(60);
+      } else if (event.type === "game_abandoned") {
+        setDisconnectCountdown(null);
+        setOpponentAbandoned(true);
+        setGameOverDismissed(false);
       }
     };
     socket.createLobby(wsUrl, name, preferredSide);
@@ -592,6 +607,10 @@ const Blokus: React.FC = () => {
         setState(deserializeState(event.state));
       } else if (event.type === "opponent_disconnected") {
         setDisconnectCountdown(60);
+      } else if (event.type === "game_abandoned") {
+        setDisconnectCountdown(null);
+        setOpponentAbandoned(true);
+        setGameOverDismissed(false);
       }
     };
     socket.joinLobby(wsUrl, name, code);
