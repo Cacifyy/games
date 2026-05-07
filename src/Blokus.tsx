@@ -79,19 +79,47 @@ const COLOR_NAME: Record<ColorId, string> = {
   4: "Green",
 };
 
-const COLOR_HEX: Record<ColorId, string> = {
+const DEFAULT_COLOR_HEX: Record<ColorId, string> = {
   1: "#2563eb",
   2: "#eab308",
   3: "#dc2626",
   4: "#16a34a",
 };
 
-const COLOR_LIGHT: Record<ColorId, string> = {
+const DEFAULT_COLOR_LIGHT: Record<ColorId, string> = {
   1: "#bfdbfe",
   2: "#fde68a",
   3: "#fecaca",
   4: "#bbf7d0",
 };
+
+// 64-color Tailwind-style palette: 8 hues × 8 shades (dark → light, top → bottom)
+const PALETTE: string[] = [
+  // shade ~900
+  "#7f1d1d", "#7c2d12", "#78350f", "#365314", "#14532d", "#064e3b", "#0c4a6e", "#1e3a8a",
+  // shade ~800
+  "#991b1b", "#9a3412", "#92400e", "#3f6212", "#166534", "#065f46", "#075985", "#1e40af",
+  // shade ~700
+  "#b91c1c", "#c2410c", "#b45309", "#4d7c0f", "#15803d", "#047857", "#0369a1", "#1d4ed8",
+  // shade ~600
+  "#dc2626", "#ea580c", "#d97706", "#65a30d", "#16a34a", "#059669", "#0284c7", "#2563eb",
+  // shade ~500
+  "#ef4444", "#f97316", "#f59e0b", "#84cc16", "#22c55e", "#10b981", "#0ea5e9", "#3b82f6",
+  // shade ~400
+  "#f87171", "#fb923c", "#fbbf24", "#a3e635", "#4ade80", "#34d399", "#38bdf8", "#60a5fa",
+  // shade ~300
+  "#fca5a5", "#fdba74", "#fcd34d", "#bef264", "#86efac", "#6ee7b7", "#7dd3fc", "#93c5fd",
+  // shade ~200
+  "#fecaca", "#fed7aa", "#fde68a", "#d9f99d", "#bbf7d0", "#a7f3d0", "#bae6fd", "#bfdbfe",
+];
+
+function lightenColor(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const mix = (v: number) => Math.round(v + (255 - v) * 0.65);
+  return `#${mix(r).toString(16).padStart(2, "0")}${mix(g).toString(16).padStart(2, "0")}${mix(b).toString(16).padStart(2, "0")}`;
+}
 
 const COLORS_FOR: Record<PlayerId, ColorId[]> = {
   A: [1, 3],
@@ -383,6 +411,23 @@ function deserializeState(s: SerializedState): GameState {
 const DEV_SKIP = new URLSearchParams(window.location.search).has("dev");
 
 const Blokus: React.FC = () => {
+  const [customColors, setCustomColors] = useState<Partial<Record<ColorId, string>>>({});
+  // Shadow module-level defaults so all inline render code works unchanged.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const COLOR_HEX = useMemo(
+    () => ({ ...DEFAULT_COLOR_HEX, ...customColors } as Record<ColorId, string>),
+    [customColors]
+  );
+  const COLOR_LIGHT = useMemo(
+    () => ({
+      1: customColors[1] ? lightenColor(customColors[1]) : DEFAULT_COLOR_LIGHT[1],
+      2: customColors[2] ? lightenColor(customColors[2]) : DEFAULT_COLOR_LIGHT[2],
+      3: customColors[3] ? lightenColor(customColors[3]) : DEFAULT_COLOR_LIGHT[3],
+      4: customColors[4] ? lightenColor(customColors[4]) : DEFAULT_COLOR_LIGHT[4],
+    } as Record<ColorId, string>),
+    [customColors]
+  );
+
   const [gameStarted, setGameStarted] = useState(DEV_SKIP);
   const [state, setState] = useState<GameState>(makeInitialState);
   const [selectedPieceId, setSelectedPieceId] = useState<string | null>(null);
@@ -889,6 +934,8 @@ const Blokus: React.FC = () => {
         lobbyCode={lobbyCode}
         lobbyError={lobbyError}
         onClearError={() => setLobbyError(null)}
+        customColors={{ ...DEFAULT_COLOR_HEX, ...customColors }}
+        onCustomColorChange={(id, hex) => setCustomColors((prev) => ({ ...prev, [id]: hex }))}
       />
     );
   }
@@ -1018,7 +1065,7 @@ const Blokus: React.FC = () => {
 
         {/* Side panel */}
         <div style={{ width: isMobile ? "100%" : undefined, minWidth: isMobile ? 0 : 380, maxWidth: isMobile ? "100%" : 700 }}>
-          <ScorePanel state={state} teamA={teamA} teamB={teamB} nameFor={nameFor} gameOver={gameOver} />
+          <ScorePanel state={state} teamA={teamA} teamB={teamB} nameFor={nameFor} gameOver={gameOver} colorHex={COLOR_HEX} colorLight={COLOR_LIGHT} />
 
           {gameOver && gameOverDismissed && (
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
@@ -1234,6 +1281,7 @@ const Blokus: React.FC = () => {
                       disabled={!isActive}
                       hideTitle
                       cellPx={trayCellPx}
+                      colorHex={COLOR_HEX}
                     />
                   </div>
                 );
@@ -1405,7 +1453,9 @@ const ScorePanel: React.FC<{
   teamB: number;
   nameFor: (p: PlayerId) => string;
   gameOver: boolean;
-}> = ({ state, teamA, teamB, nameFor, gameOver }) => {
+  colorHex: Record<ColorId, string>;
+  colorLight: Record<ColorId, string>;
+}> = ({ state, teamA, teamB, nameFor, gameOver, colorHex, colorLight }) => {
   const colorRow = (c: ColorId) => (
     <div
       key={c}
@@ -1414,8 +1464,8 @@ const ScorePanel: React.FC<{
         alignItems: "center",
         justifyContent: "space-between",
         padding: "4px 8px",
-        background: state.current === c ? COLOR_LIGHT[c] : "rgba(255,255,255,0.08)",
-        border: `1px solid ${COLOR_HEX[c]}`,
+        background: state.current === c ? colorLight[c] : "rgba(255,255,255,0.08)",
+        border: `1px solid ${colorHex[c]}`,
         borderRadius: 4,
         marginBottom: 4,
         opacity: state.passed[c] ? 0.6 : 1,
@@ -1428,7 +1478,7 @@ const ScorePanel: React.FC<{
             display: "inline-block",
             width: 12,
             height: 12,
-            background: COLOR_HEX[c],
+            background: colorHex[c],
             borderRadius: 2,
           }}
         />
@@ -1490,7 +1540,8 @@ const PieceTray: React.FC<{
   disabled: boolean;
   hideTitle?: boolean;
   cellPx?: number;
-}> = ({ color, remaining, selectedPieceId, onPick, disabled, hideTitle, cellPx = 9 }) => {
+  colorHex: Record<ColorId, string>;
+}> = ({ color, remaining, selectedPieceId, onPick, disabled, hideTitle, cellPx = 9, colorHex }) => {
   const minCell = 5 * cellPx + 14;
   return (
     <div style={{ marginTop: hideTitle ? 0 : 12 }}>
@@ -1517,7 +1568,7 @@ const PieceTray: React.FC<{
               style={{
                 padding: 3,
                 border: selected
-                  ? `2px solid ${COLOR_HEX[color]}`
+                  ? `2px solid ${colorHex[color]}`
                   : "1px solid rgba(255,255,255,0.12)",
                 background: available ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)",
                 opacity: available ? 1 : 0.4,
@@ -1532,7 +1583,7 @@ const PieceTray: React.FC<{
             >
               <ShapePreview
                 shape={p.shape}
-                color={COLOR_HEX[color]}
+                color={colorHex[color]}
                 cellPx={cellPx}
                 muted={!available}
               />
@@ -1637,10 +1688,13 @@ const LobbyPage: React.FC<{
   lobbyCode: string | null;
   lobbyError: string | null;
   onClearError: () => void;
-}> = ({ status, onFindGame, onCreateLobby, onJoinLobby, lobbyCode, lobbyError, onClearError }) => {
+  customColors: Record<ColorId, string>;
+  onCustomColorChange: (id: ColorId, hex: string) => void;
+}> = ({ status, onFindGame, onCreateLobby, onJoinLobby, lobbyCode, lobbyError, onClearError, customColors, onCustomColorChange }) => {
   const [name, setName] = useState("");
   const [joinMode, setJoinMode] = useState(false);
   const [codeInput, setCodeInput] = useState("");
+  const [openPicker, setOpenPicker] = useState<ColorId | null>(null);
 
   const hasName = name.trim().length > 0;
   const canPlay = hasName && status === "idle";
@@ -1719,6 +1773,56 @@ const LobbyPage: React.FC<{
         >
           Play Classic
         </button>
+
+        {/* Colour picker */}
+        <div style={{ display: "flex", gap: 32, justifyContent: "center" }}>
+          {([ ["Team A", [1, 3] as ColorId[]], ["Team B", [2, 4] as ColorId[]] ] as [string, ColorId[]][]).map(([label, ids]) => (
+            <div key={label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>{label}</span>
+              <div style={{ display: "flex", gap: 10 }}>
+                {ids.map((id) => (
+                  <div key={id} style={{ position: "relative" }}>
+                    <button
+                      onClick={() => setOpenPicker(openPicker === id ? null : id)}
+                      style={{
+                        width: 56, height: 56, borderRadius: 8,
+                        background: customColors[id],
+                        border: openPicker === id ? "2px solid #f8fafc" : "2px solid rgba(255,255,255,0.15)",
+                        cursor: "pointer",
+                        boxShadow: `0 2px 12px ${customColors[id]}77`,
+                        transition: "border-color 0.15s",
+                      }}
+                      title={COLOR_NAME[id]}
+                    />
+                    {openPicker === id && (
+                      <div style={{
+                        position: "absolute", top: "calc(100% + 8px)", left: "50%",
+                        transform: "translateX(-50%)", zIndex: 10,
+                        background: "#1e293b", border: "1px solid rgba(255,255,255,0.15)",
+                        borderRadius: 10, padding: 8,
+                        display: "grid", gridTemplateColumns: "repeat(8, 24px)", gap: 4,
+                        boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+                      }}>
+                        {PALETTE.map((hex) => (
+                          <button
+                            key={hex}
+                            onClick={() => { onCustomColorChange(id, hex); setOpenPicker(null); }}
+                            style={{
+                              width: 24, height: 24, borderRadius: 4, background: hex,
+                              border: customColors[id] === hex ? "2px solid #fff" : "2px solid transparent",
+                              cursor: "pointer", padding: 0,
+                            }}
+                            title={hex}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
 
         {/* Divider */}
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
