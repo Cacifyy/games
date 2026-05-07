@@ -543,6 +543,8 @@ const Blokus: React.FC = () => {
         setLobbyCode(null);
         setRematchWaiting(false);
         setMessage("");
+      } else if (event.type === "state") {
+        setState(deserializeState(event.state));
       } else if (event.type === "opponent_disconnected") {
         setMessage("Opponent disconnected.");
       }
@@ -570,6 +572,8 @@ const Blokus: React.FC = () => {
       } else if (event.type === "lobby_not_found") {
         setLobbyError("Game code not found. Check the code and try again.");
         setLobbyStatus("idle");
+      } else if (event.type === "state") {
+        setState(deserializeState(event.state));
       } else if (event.type === "opponent_disconnected") {
         setMessage("Opponent disconnected.");
       }
