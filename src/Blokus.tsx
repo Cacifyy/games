@@ -57,6 +57,12 @@ export interface GameState {
   passed: Record<ColorId, boolean>;
 }
 
+type GameMode = "classic" | "timed";
+interface GameSettings {
+  mode: GameMode;
+  timerSeconds: number;
+}
+
 // -------------------- Constants --------------------
 
 const BOARD_SIZE = 20;
@@ -450,6 +456,8 @@ const Blokus: React.FC = () => {
   const [myName, setMyName] = useState("");
   const [opponentName, setOpponentName] = useState("");
   const [lobbyStatus, setLobbyStatus] = useState<"idle" | "waiting">("idle");
+  const [gameSettings, setGameSettings] = useState<GameSettings>({ mode: "classic", timerSeconds: 20 });
+  const [turnTimeLeft, setTurnTimeLeft] = useState<number | null>(null);
 
   // Cleanup socket on unmount.
   useEffect(() => {
@@ -491,6 +499,10 @@ const Blokus: React.FC = () => {
   // True when it's this browser's turn to act (or if playing locally with no id assigned).
   const currentPlayer = PLAYER_FOR_COLOR[state.current];
   const isMyTurn = myPlayerId === null || currentPlayer === myPlayerId;
+  const isMyTurnRef = useRef(isMyTurn);
+  isMyTurnRef.current = isMyTurn;
+  const currentColorRef = useRef(state.current);
+  currentColorRef.current = state.current;
 
   // The next color belonging to this player that will get to play.
   const nextUpColor: ColorId | null = useMemo(() => {
@@ -548,8 +560,46 @@ const Blokus: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.current, state.board, gameOver]);
 
-  function handleFindGame(name: string, preferredSide: "A" | "B") {
+  // Reset turn timer when the active color changes, game starts/ends, or mode changes.
+  useEffect(() => {
+    if (gameSettings.mode !== "timed" || !gameStarted || gameOver) {
+      setTurnTimeLeft(null);
+      return;
+    }
+    setTurnTimeLeft(gameSettings.timerSeconds);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.current, gameStarted, gameOver, gameSettings.mode, gameSettings.timerSeconds]);
+
+  // Countdown tick.
+  useEffect(() => {
+    if (turnTimeLeft === null || turnTimeLeft <= 0) return;
+    const t = setTimeout(() => setTurnTimeLeft((v) => (v !== null ? v - 1 : null)), 1000);
+    return () => clearTimeout(t);
+  }, [turnTimeLeft]);
+
+  // Auto-skip when the timer hits 0.
+  useEffect(() => {
+    if (turnTimeLeft !== 0 || gameOver) return;
+    if (!isMyTurnRef.current) return;
+    const c = currentColorRef.current;
+    setState((prev) => {
+      const newState: GameState = {
+        ...prev,
+        current: nextColor(prev.current),
+        consecutivePasses: prev.consecutivePasses + 1,
+      };
+      socketRef.current?.sendMove(serializeState(newState));
+      return newState;
+    });
+    setSelectedPieceId(null);
+    setOrientation(null);
+    setMessage(`Time's up! ${COLOR_NAME[c]}'s turn was skipped.`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnTimeLeft, gameOver]);
+
+  function handleFindGame(name: string, preferredSide: "A" | "B", settings: GameSettings) {
     setMyName(name);
+    setGameSettings(settings);
     setLobbyStatus("waiting");
 
     const socket = new BlokusSocket();
@@ -595,8 +645,9 @@ const Blokus: React.FC = () => {
     socket.connect(wsUrl, name, preferredSide);
   }
 
-  function handleCreateLobby(name: string, preferredSide: "A" | "B") {
+  function handleCreateLobby(name: string, preferredSide: "A" | "B", settings: GameSettings) {
     setMyName(name);
+    setGameSettings(settings);
     setLobbyStatus("waiting");
     setLobbyCode(null);
     setLobbyError(null);
@@ -628,8 +679,9 @@ const Blokus: React.FC = () => {
     socket.createLobby(wsUrl, name, preferredSide);
   }
 
-  function handleJoinLobby(name: string, code: string) {
+  function handleJoinLobby(name: string, code: string, settings: GameSettings) {
     setMyName(name);
+    setGameSettings(settings);
     setLobbyStatus("waiting");
     setLobbyCode(null);
     setLobbyError(null);
@@ -780,6 +832,8 @@ const Blokus: React.FC = () => {
     setLobbyError(null);
     setDisconnectCountdown(null);
     setOpponentAbandoned(false);
+    setTurnTimeLeft(null);
+    setGameSettings({ mode: "classic", timerSeconds: 20 });
   }
 
   function handleRematch() {
@@ -801,7 +855,7 @@ const Blokus: React.FC = () => {
     setLobbyError(null);
     setDisconnectCountdown(null);
     setOpponentAbandoned(false);
-    handleFindGame(name, nextSide);
+    handleFindGame(name, nextSide, gameSettings);
   }
 
   const preview = useMemo(() => {
@@ -1104,20 +1158,44 @@ const Blokus: React.FC = () => {
                   ? `Your turn: ${nameFor(currentPlayer)}`
                   : `Waiting for ${nameFor(currentPlayer)}…`}
               </div>
-              <div style={{ marginBottom: 6, color: "#94a3b8", fontSize: 14 }}>
-                Now playing:{" "}
-                <span
-                  style={{
-                    background: COLOR_HEX[state.current],
-                    color: "#fff",
-                    padding: "2px 8px",
-                    borderRadius: 3,
-                    fontWeight: 600,
-                  }}
-                >
-                  {COLOR_NAME[state.current]}
+              <div style={{ marginBottom: 6, color: "#94a3b8", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>
+                  Now playing:{" "}
+                  <span
+                    style={{
+                      background: COLOR_HEX[state.current],
+                      color: "#fff",
+                      padding: "2px 8px",
+                      borderRadius: 3,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {COLOR_NAME[state.current]}
+                  </span>
                 </span>
+                {turnTimeLeft !== null && (
+                  <span style={{
+                    fontSize: 22,
+                    fontWeight: 800,
+                    fontVariantNumeric: "tabular-nums",
+                    color: turnTimeLeft <= 5 ? "#ef4444" : turnTimeLeft <= 10 ? "#f59e0b" : "#f8fafc",
+                    transition: "color 0.3s",
+                  }}>
+                    {turnTimeLeft}s
+                  </span>
+                )}
               </div>
+              {turnTimeLeft !== null && (
+                <div style={{ height: 4, background: "rgba(255,255,255,0.1)", borderRadius: 2, marginBottom: 8, overflow: "hidden" }}>
+                  <div style={{
+                    height: "100%",
+                    width: `${(turnTimeLeft / gameSettings.timerSeconds) * 100}%`,
+                    background: turnTimeLeft <= 5 ? "#ef4444" : turnTimeLeft <= 10 ? "#f59e0b" : COLOR_HEX[state.current],
+                    borderRadius: 2,
+                    transition: "width 1s linear, background 0.3s",
+                  }} />
+                </div>
+              )}
               {isFirstMoveFor[state.current] ? (
                 <div style={{ fontSize: 13, color: "#94a3b8" }}>
                   First {COLOR_NAME[state.current]} move: piece must cover corner (
@@ -1682,9 +1760,9 @@ const CARD_STYLE: React.CSSProperties = {
 
 const LobbyPage: React.FC<{
   status: "idle" | "waiting";
-  onFindGame: (name: string, preferredSide: "A" | "B") => void;
-  onCreateLobby: (name: string, preferredSide: "A" | "B") => void;
-  onJoinLobby: (name: string, code: string) => void;
+  onFindGame: (name: string, preferredSide: "A" | "B", settings: GameSettings) => void;
+  onCreateLobby: (name: string, preferredSide: "A" | "B", settings: GameSettings) => void;
+  onJoinLobby: (name: string, code: string, settings: GameSettings) => void;
   lobbyCode: string | null;
   lobbyError: string | null;
   onClearError: () => void;
@@ -1695,7 +1773,10 @@ const LobbyPage: React.FC<{
   const [joinMode, setJoinMode] = useState(false);
   const [codeInput, setCodeInput] = useState("");
   const [openPicker, setOpenPicker] = useState<ColorId | null>(null);
+  const [gameMode, setGameMode] = useState<GameMode>("classic");
+  const [timerSeconds, setTimerSeconds] = useState(20);
 
+  const settings: GameSettings = { mode: gameMode, timerSeconds };
   const hasName = name.trim().length > 0;
   const canPlay = hasName && status === "idle";
   const canCreate = hasName && status === "idle";
@@ -1723,7 +1804,7 @@ const LobbyPage: React.FC<{
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && canPlay && onFindGame(name.trim(), randomSide())}
+            onKeyDown={(e) => e.key === "Enter" && canPlay && onFindGame(name.trim(), randomSide(), settings)}
             placeholder="Enter your name…"
             maxLength={24}
             style={{
@@ -1736,6 +1817,53 @@ const LobbyPage: React.FC<{
               outline: "none",
             }}
           />
+        </div>
+
+        {/* Game Rules */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <label style={{ fontSize: 13, color: "#94a3b8" }}>Game Mode</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {(["classic", "timed"] as GameMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setGameMode(mode)}
+                  style={{
+                    flex: 1, padding: "10px 0", borderRadius: 8, fontSize: 14, fontWeight: 600,
+                    border: gameMode === mode ? "2px solid #ec4899" : "1px solid rgba(255,255,255,0.2)",
+                    background: gameMode === mode ? "rgba(236,72,153,0.12)" : "rgba(255,255,255,0.04)",
+                    color: gameMode === mode ? "#f9a8d4" : "#64748b",
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  <div>{mode === "classic" ? "Classic" : "Timed"}</div>
+                  <div style={{ fontSize: 11, marginTop: 2, opacity: 0.7 }}>
+                    {mode === "classic" ? "No time limit" : "Timer per move"}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {gameMode === "timed" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <label style={{ fontSize: 13, color: "#94a3b8" }}>Seconds per move</label>
+                  <span style={{ fontSize: 22, fontWeight: 800, color: "#f9a8d4", fontVariantNumeric: "tabular-nums" }}>{timerSeconds}s</span>
+                </div>
+                <input
+                  type="range"
+                  min={10}
+                  max={30}
+                  step={5}
+                  value={timerSeconds}
+                  onChange={(e) => setTimerSeconds(Number(e.target.value))}
+                  style={{ width: "100%", accentColor: "#ec4899", cursor: "pointer" }}
+                />
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#475569" }}>
+                  <span>10s</span><span>15s</span><span>20s</span><span>25s</span><span>30s</span>
+                </div>
+              </div>
+            )}
         </div>
 
         {/* Status banners */}
@@ -1765,13 +1893,13 @@ const LobbyPage: React.FC<{
           </div>
         )}
 
-        {/* Play Classic */}
+        {/* Play button */}
         <button
           disabled={!canPlay}
-          onClick={() => { onClearError(); onFindGame(name.trim(), randomSide()); }}
+          onClick={() => { onClearError(); onFindGame(name.trim(), randomSide(), settings); }}
           style={{ padding:"14px 0", fontSize:16, fontWeight:700, borderRadius:10, border:"none", background: canPlay ? "linear-gradient(135deg, #ec4899, #be185d)" : "rgba(255,255,255,0.08)", color: canPlay ? "#fff" : "#475569", cursor: canPlay ? "pointer" : "not-allowed", boxShadow: canPlay ? "0 0 32px rgba(236,72,153,0.5)" : "none", letterSpacing:1 }}
         >
-          Play Classic
+          {gameMode === "classic" ? "Play Classic" : `Play Timed (${timerSeconds}s)`}
         </button>
 
         {/* Colour picker */}
@@ -1836,7 +1964,7 @@ const LobbyPage: React.FC<{
           <div style={{ display:"flex", gap:10 }}>
             <button
               disabled={!canCreate}
-              onClick={() => { onClearError(); onCreateLobby(name.trim(), randomSide()); }}
+              onClick={() => { onClearError(); onCreateLobby(name.trim(), randomSide(), settings); }}
               style={{ flex:1, padding:"11px 0", fontSize:14, fontWeight:600, borderRadius:8, border:"1px solid rgba(255,255,255,0.2)", background: canCreate ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)", color: canCreate ? "#f8fafc" : "#475569", cursor: canCreate ? "pointer" : "not-allowed" }}
             >
               Create Private Game
@@ -1856,14 +1984,14 @@ const LobbyPage: React.FC<{
               type="text"
               value={codeInput}
               onChange={(e) => { onClearError(); setCodeInput(e.target.value.toUpperCase().slice(0, 6)); }}
-              onKeyDown={(e) => e.key === "Enter" && canJoin && onJoinLobby(name.trim(), codeInput)}
+              onKeyDown={(e) => e.key === "Enter" && canJoin && onJoinLobby(name.trim(), codeInput, settings)}
               placeholder="Enter 6-character code…"
               style={{ padding:"10px 14px", borderRadius:8, border:"1px solid rgba(255,255,255,0.2)", background:"rgba(255,255,255,0.08)", color:"#f8fafc", fontSize:16, outline:"none", fontFamily:"monospace", letterSpacing:4, textTransform:"uppercase" }}
             />
             <div style={{ display:"flex", gap:8 }}>
               <button
                 disabled={!canJoin}
-                onClick={() => onJoinLobby(name.trim(), codeInput)}
+                onClick={() => onJoinLobby(name.trim(), codeInput, settings)}
                 style={{ flex:1, padding:"11px 0", fontSize:14, fontWeight:600, borderRadius:8, border:"none", background: canJoin ? "linear-gradient(135deg, #ec4899, #be185d)" : "rgba(255,255,255,0.08)", color: canJoin ? "#fff" : "#475569", cursor: canJoin ? "pointer" : "not-allowed" }}
               >
                 Join Game
