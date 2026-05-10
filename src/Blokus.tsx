@@ -10,6 +10,7 @@ import {
   COLOR_ORDER,
   START_SQUARES,
   COLOR_NAME,
+  PALETTE_NAMES,
   DEFAULT_COLOR_HEX,
   DEFAULT_COLOR_LIGHT,
   COLORS_FOR,
@@ -32,6 +33,10 @@ import {
 import { BlokusSocket, type ServerEvent } from "./socket";
 import { ShapePreview, GameMessage, Spinner, btn } from "./shared/ui";
 import { LobbyPage, LOBBY_BG, CARD_STYLE } from "./lobby/Lobby";
+
+function colorLabel(c: ColorId, colorHex: Record<ColorId, string>): string {
+  return PALETTE_NAMES[colorHex[c]] ?? COLOR_NAME[c];
+}
 
 // -------------------- Subcomponents --------------------
 
@@ -62,7 +67,7 @@ const ScorePanel: React.FC<{
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ display: "inline-block", width: 12, height: 12, background: colorHex[c], borderRadius: 2 }} />
-        <strong>{COLOR_NAME[c]}</strong>
+        <strong>{colorLabel(c, colorHex)}</strong>
         {state.passed[c] && <span style={{ fontSize: 11, color: "#94a3b8" }}>(out)</span>}
         {state.finished[c] && <span style={{ fontSize: 11, color: "#16a34a" }}>(done!)</span>}
       </div>
@@ -115,7 +120,7 @@ const PieceTray: React.FC<{
   const minCell = 5 * cellPx + 14;
   return (
     <div style={{ marginTop: hideTitle ? 0 : 12 }}>
-      {!hideTitle && <h4 style={{ margin: "8px 0" }}>{COLOR_NAME[color]}'s remaining pieces</h4>}
+      {!hideTitle && <h4 style={{ margin: "8px 0" }}>{colorLabel(color, colorHex)}'s remaining pieces</h4>}
       <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${minCell}px, 1fr))`, gap: 4 }}>
         {PIECES.map((p) => {
           const available = remaining[color].has(p.id);
@@ -265,7 +270,7 @@ const Blokus: React.FC = () => {
 
     const canMove = hasAnyLegalMove(state.board, c, state.remaining[c], isFirstMoveFor[c]);
     if (!canMove) {
-      setMessage(`${COLOR_NAME[c]} has no legal moves and is out for the rest of the game.`);
+      setMessage(`${colorLabel(c, COLOR_HEX)} has no legal moves and is out for the rest of the game.`);
       const t = setTimeout(() => {
         setState((s) => ({
           ...s,
@@ -309,7 +314,7 @@ const Blokus: React.FC = () => {
     });
     setSelectedPieceId(null);
     setOrientation(null);
-    setMessage(`Time's up! ${COLOR_NAME[c]}'s turn was skipped.`);
+    setMessage(`Time's up! ${colorLabel(c, COLOR_HEX)}'s turn was skipped.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turnTimeLeft, gameOver]);
 
@@ -483,7 +488,7 @@ const Blokus: React.FC = () => {
     socketRef.current?.sendMove(serializeState(newState));
     setSelectedPieceId(null);
     setOrientation(null);
-    setMessage(`${COLOR_NAME[c]} resigned (no more moves this game).`);
+    setMessage(`${colorLabel(c, COLOR_HEX)} resigned (no more moves this game).`);
   }
 
   function skipTurn() {
@@ -498,7 +503,7 @@ const Blokus: React.FC = () => {
     socketRef.current?.sendMove(serializeState(newState));
     setSelectedPieceId(null);
     setOrientation(null);
-    setMessage(`${COLOR_NAME[c]} skipped their turn.`);
+    setMessage(`${colorLabel(c, COLOR_HEX)} skipped their turn.`);
   }
 
   function resetGame() {
@@ -781,7 +786,7 @@ const Blokus: React.FC = () => {
                   <span>
                     Now playing:{" "}
                     <span style={{ background: COLOR_HEX[state.current], color: "#fff", padding: "2px 8px", borderRadius: 3, fontWeight: 600 }}>
-                      {COLOR_NAME[state.current]}
+                      {colorLabel(state.current, COLOR_HEX)}
                     </span>
                   </span>
                   {turnTimeLeft !== null && (
@@ -797,11 +802,11 @@ const Blokus: React.FC = () => {
                 )}
                 {isFirstMoveFor[state.current] ? (
                   <div style={{ fontSize: 13, color: "#94a3b8" }}>
-                    First {COLOR_NAME[state.current]} move: piece must cover corner ({START_SQUARES[state.current][0] + 1}, {START_SQUARES[state.current][1] + 1}).
+                    First {colorLabel(state.current, COLOR_HEX)} move: piece must cover corner ({START_SQUARES[state.current][0] + 1}, {START_SQUARES[state.current][1] + 1}).
                   </div>
                 ) : (
                   <div style={{ fontSize: 13, color: "#94a3b8" }}>
-                    Must touch a diagonal corner of an existing {COLOR_NAME[state.current]} piece, with no shared edges.
+                    Must touch a diagonal corner of an existing {colorLabel(state.current, COLOR_HEX)} piece, with no shared edges.
                   </div>
                 )}
 
@@ -811,7 +816,7 @@ const Blokus: React.FC = () => {
                     <button onClick={flipSelected} disabled={!orientation} style={btn()}>Flip ⇋</button>
                     <button onClick={() => setSelectedPieceId(null)} disabled={!selectedPieceId} style={btn()}>Deselect</button>
                     <button onClick={skipTurn} style={btn()}>Skip turn</button>
-                    <button onClick={manualPass} style={btn("warn")}>Resign {COLOR_NAME[state.current]}</button>
+                    <button onClick={manualPass} style={btn("warn")}>Resign {colorLabel(state.current, COLOR_HEX)}</button>
                   </div>
                 )}
 
@@ -885,7 +890,7 @@ const Blokus: React.FC = () => {
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                         <span style={{ width: 9, height: 9, borderRadius: 2, background: COLOR_HEX[color], flexShrink: 0 }} />
-                        <strong style={{ fontSize: 12 }}>{COLOR_NAME[color]}</strong>
+                        <strong style={{ fontSize: 12 }}>{colorLabel(color, COLOR_HEX)}</strong>
                         <span style={{ fontSize: 10, color: "#64748b" }}>{state.remaining[color].size} left</span>
                         {isActive && (
                           <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 700, background: COLOR_HEX[color], color: "#fff", padding: "1px 6px", borderRadius: 10 }}>
@@ -943,7 +948,7 @@ const Blokus: React.FC = () => {
                       <div key={c} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
                         <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
                           <span style={{ width: 8, height: 8, borderRadius: 2, background: COLOR_HEX[c], display: "inline-block" }} />
-                          {COLOR_NAME[c]}
+                          {colorLabel(c, COLOR_HEX)}
                         </span>
                         <span style={{ fontSize: 12, color: "#94a3b8" }}>{colorScore(state, c)}</span>
                       </div>
