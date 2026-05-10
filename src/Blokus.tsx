@@ -372,7 +372,7 @@ const Blokus: React.FC = () => {
     const socket = new BlokusSocket();
     socketRef.current = socket;
     makeSocketHandlers(socket);
-    socket.connect(wsUrl(), name, preferredSide, customColors);
+    socket.connect(wsUrl(), name, preferredSide, { ...DEFAULT_COLOR_HEX, ...customColors });
   }
 
   function handleCreateLobby(name: string, preferredSide: "A" | "B", settings: GameSettings) {
@@ -391,7 +391,7 @@ const Blokus: React.FC = () => {
         socket.onEvent!(event);
       }
     };
-    socket.createLobby(wsUrl(), name, preferredSide, customColors);
+    socket.createLobby(wsUrl(), name, preferredSide, { ...DEFAULT_COLOR_HEX, ...customColors });
   }
 
   function handleJoinLobby(name: string, code: string, settings: GameSettings) {
@@ -411,7 +411,7 @@ const Blokus: React.FC = () => {
         socket.onEvent!(event);
       }
     };
-    socket.joinLobby(wsUrl(), name, code, customColors);
+    socket.joinLobby(wsUrl(), name, code, { ...DEFAULT_COLOR_HEX, ...customColors });
   }
 
   function rotateSelected() {
