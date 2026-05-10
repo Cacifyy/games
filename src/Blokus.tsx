@@ -1819,9 +1819,8 @@ const LobbyPage: React.FC<{
           />
         </div>
 
-        {/* Game Rules — visible once a name is entered */}
-        {hasName && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {/* Game Rules */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <label style={{ fontSize: 13, color: "#94a3b8" }}>Game Mode</label>
             <div style={{ display: "flex", gap: 8 }}>
               {(["classic", "timed"] as GameMode[]).map((mode) => (
@@ -1865,8 +1864,7 @@ const LobbyPage: React.FC<{
                 </div>
               </div>
             )}
-          </div>
-        )}
+        </div>
 
         {/* Status banners */}
         {status === "waiting" && !lobbyCode && (
