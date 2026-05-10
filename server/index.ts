@@ -4,11 +4,11 @@ import crypto from "crypto";
 
 type PlayerId = "A" | "B";
 
-interface JoinMsg         { type: "join";         name: string; preferredSide: PlayerId }
+interface JoinMsg         { type: "join";         name: string; preferredSide: PlayerId; colors?: Record<string, string> }
 interface RejoinMsg       { type: "rejoin";       token: string }
 interface MoveMsg         { type: "move";         state: unknown }
-interface CreateLobbyMsg  { type: "create_lobby"; name: string; preferredSide: PlayerId }
-interface JoinLobbyMsg    { type: "join_lobby";   name: string; code: string }
+interface CreateLobbyMsg  { type: "create_lobby"; name: string; preferredSide: PlayerId; colors?: Record<string, string> }
+interface JoinLobbyMsg    { type: "join_lobby";   name: string; code: string; colors?: Record<string, string> }
 type ClientMsg = JoinMsg | RejoinMsg | MoveMsg | CreateLobbyMsg | JoinLobbyMsg;
 
 const PORT = Number(process.env.PORT ?? 3001);
@@ -39,10 +39,10 @@ const sessions = new Map<string, { game: Game; playerId: PlayerId }>();
 // socket → session info
 const sockets  = new Map<WebSocket, { game: Game; playerId: PlayerId }>();
 
-let waiting: { ws: WebSocket; name: string; preferredSide: PlayerId } | null = null;
+let waiting: { ws: WebSocket; name: string; preferredSide: PlayerId; colors?: Record<string, string> } | null = null;
 
 // code → private lobby creator
-const privateLobbies = new Map<string, { ws: WebSocket; name: string; preferredSide: PlayerId }>();
+const privateLobbies = new Map<string, { ws: WebSocket; name: string; preferredSide: PlayerId; colors?: Record<string, string> }>();
 
 function generateCode(): string {
   return crypto.randomBytes(3).toString("hex").toUpperCase(); // e.g. "A3F2C1"
@@ -108,11 +108,11 @@ wss.on("connection", (ws) => {
     // ── New join ─────────────────────────────────────────────────────────────
     if (msg.type === "join") {
       if (!waiting) {
-        waiting = { ws, name: msg.name, preferredSide: msg.preferredSide };
+        waiting = { ws, name: msg.name, preferredSide: msg.preferredSide, colors: msg.colors };
         send(ws, { type: "waiting" });
         console.log(`${msg.name} is waiting for an opponent`);
       } else {
-        const { ws: partnerWs, name: partnerName, preferredSide: partnerPref } = waiting;
+        const { ws: partnerWs, name: partnerName, preferredSide: partnerPref, colors: partnerColors } = waiting;
         waiting = null;
 
         const gameId   = crypto.randomUUID();
@@ -135,8 +135,8 @@ wss.on("connection", (ws) => {
         sockets.set(partnerWs, { game, playerId: sideA });
         sockets.set(ws,        { game, playerId: sideB });
 
-        send(partnerWs, { type: "start", playerId: sideA, opponentName: msg.name,    token: tokenA });
-        send(ws,        { type: "start", playerId: sideB, opponentName: partnerName, token: tokenB });
+        send(partnerWs, { type: "start", playerId: sideA, opponentName: msg.name,    token: tokenA, opponentColors: msg.colors });
+        send(ws,        { type: "start", playerId: sideB, opponentName: partnerName, token: tokenB, opponentColors: partnerColors });
         console.log(`Paired: ${partnerName} (${sideA}) vs ${msg.name} (${sideB}) [${gameId}]`);
       }
       return;
@@ -145,7 +145,7 @@ wss.on("connection", (ws) => {
     // ── Create private lobby ─────────────────────────────────────────────────
     if (msg.type === "create_lobby") {
       const code = generateCode();
-      privateLobbies.set(code, { ws, name: msg.name, preferredSide: msg.preferredSide });
+      privateLobbies.set(code, { ws, name: msg.name, preferredSide: msg.preferredSide, colors: msg.colors });
       send(ws, { type: "lobby_created", code });
       console.log(`${msg.name} created private lobby [${code}]`);
       return;
@@ -161,7 +161,7 @@ wss.on("connection", (ws) => {
       }
       privateLobbies.delete(code);
 
-      const { ws: partnerWs, name: partnerName, preferredSide: partnerPref } = lobby;
+      const { ws: partnerWs, name: partnerName, preferredSide: partnerPref, colors: partnerColors } = lobby;
       const gameId = crypto.randomUUID();
       const tokenA = crypto.randomUUID();
       const tokenB = crypto.randomUUID();
@@ -182,8 +182,8 @@ wss.on("connection", (ws) => {
       sockets.set(partnerWs, { game, playerId: sideA });
       sockets.set(ws,        { game, playerId: sideB });
 
-      send(partnerWs, { type: "start", playerId: sideA, opponentName: msg.name,    token: tokenA });
-      send(ws,        { type: "start", playerId: sideB, opponentName: partnerName, token: tokenB });
+      send(partnerWs, { type: "start", playerId: sideA, opponentName: msg.name,    token: tokenA, opponentColors: msg.colors });
+      send(ws,        { type: "start", playerId: sideB, opponentName: partnerName, token: tokenB, opponentColors: partnerColors });
       console.log(`Private game: ${partnerName} (${sideA}) vs ${msg.name} (${sideB}) [${gameId}]`);
       return;
     }

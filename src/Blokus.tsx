@@ -316,8 +316,21 @@ const Blokus: React.FC = () => {
   function makeSocketHandlers(socket: BlokusSocket) {
     socket.onEvent = (event: ServerEvent) => {
       if (event.type === "start") {
-        setMyPlayerId(event.playerId as PlayerId);
+        const myId = event.playerId as PlayerId;
+        setMyPlayerId(myId);
         setOpponentName(event.opponentName);
+        if (event.opponentColors) {
+          const opponentId: PlayerId = myId === "A" ? "B" : "A";
+          const opponentColorIds = COLORS_FOR[opponentId];
+          const opponentOverrides: Partial<Record<string, string>> = {};
+          for (const cId of opponentColorIds) {
+            const hex = event.opponentColors[cId];
+            if (hex) opponentOverrides[cId] = hex;
+          }
+          if (Object.keys(opponentOverrides).length > 0) {
+            setCustomColors((prev) => ({ ...prev, ...opponentOverrides }));
+          }
+        }
         setGameStarted(true);
         setLobbyStatus("idle");
         setRematchWaiting(false);
@@ -359,7 +372,7 @@ const Blokus: React.FC = () => {
     const socket = new BlokusSocket();
     socketRef.current = socket;
     makeSocketHandlers(socket);
-    socket.connect(wsUrl(), name, preferredSide);
+    socket.connect(wsUrl(), name, preferredSide, customColors);
   }
 
   function handleCreateLobby(name: string, preferredSide: "A" | "B", settings: GameSettings) {
@@ -378,7 +391,7 @@ const Blokus: React.FC = () => {
         socket.onEvent!(event);
       }
     };
-    socket.createLobby(wsUrl(), name, preferredSide);
+    socket.createLobby(wsUrl(), name, preferredSide, customColors);
   }
 
   function handleJoinLobby(name: string, code: string, settings: GameSettings) {
@@ -398,7 +411,7 @@ const Blokus: React.FC = () => {
         socket.onEvent!(event);
       }
     };
-    socket.joinLobby(wsUrl(), name, code);
+    socket.joinLobby(wsUrl(), name, code, customColors);
   }
 
   function rotateSelected() {

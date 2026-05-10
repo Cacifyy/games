@@ -8,7 +8,7 @@ export type { PlayerId, ColorId, SerializedState } from "./games/blokus/engine";
 
 export type ServerEvent =
   | { type: "waiting" }
-  | { type: "start";               playerId: PlayerId; opponentName: string; token: string }
+  | { type: "start";               playerId: PlayerId; opponentName: string; token: string; opponentColors?: Record<string, string> }
   | { type: "rejoined";            playerId: PlayerId; opponentName: string; state: SerializedState | null }
   | { type: "state";               state: SerializedState }
   | { type: "opponent_disconnected" }
@@ -32,19 +32,19 @@ export class BlokusSocket {
 
   // ── Public API ────────────────────────────────────────────────────────────
 
-  connect(url: string, name: string, preferredSide: "A" | "B"): void {
+  connect(url: string, name: string, preferredSide: "A" | "B", colors?: Record<string, string>): void {
     this.wsUrl = url;
-    this._dial(() => this._send({ type: "join", name, preferredSide }));
+    this._dial(() => this._send({ type: "join", name, preferredSide, colors }));
   }
 
-  createLobby(url: string, name: string, preferredSide: "A" | "B"): void {
+  createLobby(url: string, name: string, preferredSide: "A" | "B", colors?: Record<string, string>): void {
     this.wsUrl = url;
-    this._dial(() => this._send({ type: "create_lobby", name, preferredSide }));
+    this._dial(() => this._send({ type: "create_lobby", name, preferredSide, colors }));
   }
 
-  joinLobby(url: string, name: string, code: string): void {
+  joinLobby(url: string, name: string, code: string, colors?: Record<string, string>): void {
     this.wsUrl = url;
-    this._dial(() => this._send({ type: "join_lobby", name, code }));
+    this._dial(() => this._send({ type: "join_lobby", name, code, colors }));
   }
 
   sendMove(state: SerializedState): void {
