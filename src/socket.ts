@@ -3,20 +3,8 @@
 // GameState.remaining uses Set<string>, which isn't JSON-serializable,
 // so we convert to/from string[] at the boundary here.
 
-export type PlayerId = "A" | "B";
-export type ColorId = 1 | 2 | 3 | 4;
-
-// Wire-format for GameState (Sets → arrays for JSON).
-export interface SerializedState {
-  board: number[][];
-  current: ColorId;
-  remaining: Record<string, string[]>; // "1"|"2"|"3"|"4" → piece id array
-  history: Array<{ color: ColorId; pieceId: string; cells: [number, number][] }>;
-  consecutivePasses: number;
-  lastPlacedWasMonomino: Record<string, boolean>;
-  finished: Record<string, boolean>;
-  passed: Record<string, boolean>;
-}
+import type { PlayerId, SerializedState } from "./games/blokus/engine";
+export type { PlayerId, ColorId, SerializedState } from "./games/blokus/engine";
 
 export type ServerEvent =
   | { type: "waiting" }
