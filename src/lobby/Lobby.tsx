@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import type { ColorId, GameMode, GameSettings } from "../games/blokus/engine";
-import { COLOR_NAME, PALETTE } from "../games/blokus/engine";
+import { COLOR_NAME, PALETTE, PALETTE_NAMES } from "../games/blokus/engine";
 import { Spinner, btn } from "../shared/ui";
 
 export const LOBBY_BG: React.CSSProperties = {
@@ -249,7 +249,7 @@ export const LobbyPage: React.FC<{
                           borderRadius: 10,
                           padding: 8,
                           display: "grid",
-                          gridTemplateColumns: "repeat(8, 24px)",
+                          gridTemplateColumns: "repeat(16, 24px)",
                           gap: 4,
                           boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
                         }}>
@@ -266,7 +266,7 @@ export const LobbyPage: React.FC<{
                                 cursor: "pointer",
                                 padding: 0,
                               }}
-                              title={hex}
+                              title={PALETTE_NAMES[hex] ?? hex}
                             />
                           ))}
                         </div>

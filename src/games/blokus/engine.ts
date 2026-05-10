@@ -83,17 +83,69 @@ export const DEFAULT_COLOR_LIGHT: Record<ColorId, string> = {
   4: "#bbf7d0",
 };
 
-// 64-color palette: 8 hues × 8 shades
+// 128-color palette: 16 hues × 8 shades (dark → light)
+// Hues: Red, Rose, Orange, Amber, Yellow, Lime, Green, Emerald, Teal, Cyan, Sky, Blue, Indigo, Violet, Purple, Fuchsia
 export const PALETTE: string[] = [
-  "#7f1d1d", "#7c2d12", "#78350f", "#365314", "#14532d", "#064e3b", "#0c4a6e", "#1e3a8a",
-  "#991b1b", "#9a3412", "#92400e", "#3f6212", "#166534", "#065f46", "#075985", "#1e40af",
-  "#b91c1c", "#c2410c", "#b45309", "#4d7c0f", "#15803d", "#047857", "#0369a1", "#1d4ed8",
-  "#dc2626", "#ea580c", "#d97706", "#65a30d", "#16a34a", "#059669", "#0284c7", "#2563eb",
-  "#ef4444", "#f97316", "#f59e0b", "#84cc16", "#22c55e", "#10b981", "#0ea5e9", "#3b82f6",
-  "#f87171", "#fb923c", "#fbbf24", "#a3e635", "#4ade80", "#34d399", "#38bdf8", "#60a5fa",
-  "#fca5a5", "#fdba74", "#fcd34d", "#bef264", "#86efac", "#6ee7b7", "#7dd3fc", "#93c5fd",
-  "#fecaca", "#fed7aa", "#fde68a", "#d9f99d", "#bbf7d0", "#a7f3d0", "#bae6fd", "#bfdbfe",
+  "#7f1d1d", "#881337", "#7c2d12", "#78350f", "#713f12", "#365314", "#14532d", "#064e3b", "#134e4a", "#083344", "#0c4a6e", "#1e3a8a", "#1e1b4b", "#2e1065", "#3b0764", "#4a044e",
+  "#991b1b", "#9f1239", "#9a3412", "#92400e", "#854d0e", "#3f6212", "#166534", "#065f46", "#115e59", "#164e63", "#075985", "#1e40af", "#312e81", "#4c1d95", "#581c87", "#701a75",
+  "#b91c1c", "#be123c", "#c2410c", "#b45309", "#a16207", "#4d7c0f", "#15803d", "#047857", "#0f766e", "#0e7490", "#0369a1", "#1d4ed8", "#3730a3", "#5b21b6", "#6b21a8", "#a21caf",
+  "#dc2626", "#e11d48", "#ea580c", "#d97706", "#ca8a04", "#65a30d", "#16a34a", "#059669", "#0d9488", "#0891b2", "#0284c7", "#2563eb", "#4338ca", "#7c3aed", "#7e22ce", "#c026d3",
+  "#ef4444", "#f43f5e", "#f97316", "#f59e0b", "#eab308", "#84cc16", "#22c55e", "#10b981", "#14b8a6", "#06b6d4", "#0ea5e9", "#3b82f6", "#6366f1", "#8b5cf6", "#a855f7", "#d946ef",
+  "#f87171", "#fb7185", "#fb923c", "#fbbf24", "#facc15", "#a3e635", "#4ade80", "#34d399", "#2dd4bf", "#22d3ee", "#38bdf8", "#60a5fa", "#818cf8", "#a78bfa", "#c084fc", "#e879f9",
+  "#fca5a5", "#fda4af", "#fdba74", "#fcd34d", "#fde047", "#bef264", "#86efac", "#6ee7b7", "#5eead4", "#67e8f9", "#7dd3fc", "#93c5fd", "#a5b4fc", "#c4b5fd", "#d8b4fe", "#f0abfc",
+  "#fecaca", "#fecdd3", "#fed7aa", "#fde68a", "#fef08a", "#d9f99d", "#bbf7d0", "#a7f3d0", "#99f6e4", "#a5f3fc", "#bae6fd", "#bfdbfe", "#c7d2fe", "#ddd6fe", "#e9d5ff", "#f5d0fe",
 ];
+
+export const PALETTE_NAMES: Record<string, string> = {
+  // Red
+  "#7f1d1d": "Dark Red",       "#991b1b": "Deep Red",      "#b91c1c": "Rich Red",     "#dc2626": "Red",
+  "#ef4444": "Bright Red",     "#f87171": "Light Red",     "#fca5a5": "Pale Red",     "#fecaca": "Soft Red",
+  // Rose
+  "#881337": "Dark Rose",      "#9f1239": "Deep Rose",     "#be123c": "Rich Rose",    "#e11d48": "Rose",
+  "#f43f5e": "Bright Rose",    "#fb7185": "Light Rose",    "#fda4af": "Pale Rose",    "#fecdd3": "Soft Rose",
+  // Orange
+  "#7c2d12": "Dark Orange",    "#9a3412": "Deep Orange",   "#c2410c": "Rich Orange",  "#ea580c": "Orange",
+  "#f97316": "Bright Orange",  "#fb923c": "Light Orange",  "#fdba74": "Pale Orange",  "#fed7aa": "Soft Orange",
+  // Amber
+  "#78350f": "Dark Amber",     "#92400e": "Deep Amber",    "#b45309": "Rich Amber",   "#d97706": "Amber",
+  "#f59e0b": "Bright Amber",   "#fbbf24": "Light Amber",   "#fcd34d": "Pale Amber",   "#fde68a": "Soft Amber",
+  // Yellow
+  "#713f12": "Dark Yellow",    "#854d0e": "Deep Yellow",   "#a16207": "Rich Yellow",  "#ca8a04": "Yellow",
+  "#eab308": "Bright Yellow",  "#facc15": "Light Yellow",  "#fde047": "Pale Yellow",  "#fef08a": "Soft Yellow",
+  // Lime
+  "#365314": "Dark Lime",      "#3f6212": "Deep Lime",     "#4d7c0f": "Rich Lime",    "#65a30d": "Lime",
+  "#84cc16": "Bright Lime",    "#a3e635": "Light Lime",    "#bef264": "Pale Lime",    "#d9f99d": "Soft Lime",
+  // Green
+  "#14532d": "Dark Green",     "#166534": "Deep Green",    "#15803d": "Rich Green",   "#16a34a": "Green",
+  "#22c55e": "Bright Green",   "#4ade80": "Light Green",   "#86efac": "Pale Green",   "#bbf7d0": "Soft Green",
+  // Emerald
+  "#064e3b": "Dark Emerald",   "#065f46": "Deep Emerald",  "#047857": "Rich Emerald", "#059669": "Emerald",
+  "#10b981": "Bright Emerald", "#34d399": "Light Emerald", "#6ee7b7": "Pale Emerald", "#a7f3d0": "Soft Emerald",
+  // Teal
+  "#134e4a": "Dark Teal",      "#115e59": "Deep Teal",     "#0f766e": "Rich Teal",    "#0d9488": "Teal",
+  "#14b8a6": "Bright Teal",    "#2dd4bf": "Light Teal",    "#5eead4": "Pale Teal",    "#99f6e4": "Soft Teal",
+  // Cyan
+  "#083344": "Dark Cyan",      "#164e63": "Deep Cyan",     "#0e7490": "Rich Cyan",    "#0891b2": "Cyan",
+  "#06b6d4": "Bright Cyan",    "#22d3ee": "Light Cyan",    "#67e8f9": "Pale Cyan",    "#a5f3fc": "Soft Cyan",
+  // Sky
+  "#0c4a6e": "Dark Sky Blue",  "#075985": "Deep Sky Blue", "#0369a1": "Rich Sky Blue","#0284c7": "Sky Blue",
+  "#0ea5e9": "Bright Sky Blue","#38bdf8": "Light Sky Blue","#7dd3fc": "Pale Sky Blue","#bae6fd": "Soft Sky Blue",
+  // Blue
+  "#1e3a8a": "Dark Blue",      "#1e40af": "Deep Blue",     "#1d4ed8": "Rich Blue",    "#2563eb": "Blue",
+  "#3b82f6": "Bright Blue",    "#60a5fa": "Light Blue",    "#93c5fd": "Pale Blue",    "#bfdbfe": "Soft Blue",
+  // Indigo
+  "#1e1b4b": "Dark Indigo",    "#312e81": "Deep Indigo",   "#3730a3": "Rich Indigo",  "#4338ca": "Indigo",
+  "#6366f1": "Bright Indigo",  "#818cf8": "Light Indigo",  "#a5b4fc": "Pale Indigo",  "#c7d2fe": "Soft Indigo",
+  // Violet
+  "#2e1065": "Dark Violet",    "#4c1d95": "Deep Violet",   "#5b21b6": "Rich Violet",  "#7c3aed": "Violet",
+  "#8b5cf6": "Bright Violet",  "#a78bfa": "Light Violet",  "#c4b5fd": "Pale Violet",  "#ddd6fe": "Soft Violet",
+  // Purple
+  "#3b0764": "Dark Purple",    "#581c87": "Deep Purple",   "#6b21a8": "Rich Purple",  "#7e22ce": "Purple",
+  "#a855f7": "Bright Purple",  "#c084fc": "Light Purple",  "#d8b4fe": "Pale Purple",  "#e9d5ff": "Soft Purple",
+  // Fuchsia
+  "#4a044e": "Dark Fuchsia",   "#701a75": "Deep Fuchsia",  "#a21caf": "Rich Fuchsia", "#c026d3": "Fuchsia",
+  "#d946ef": "Bright Fuchsia", "#e879f9": "Light Fuchsia", "#f0abfc": "Pale Fuchsia", "#f5d0fe": "Soft Fuchsia",
+};
 
 export function lightenColor(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16);
